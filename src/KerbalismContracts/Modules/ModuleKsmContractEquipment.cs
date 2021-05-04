@@ -11,7 +11,9 @@ namespace KerbalismContracts
 		off, nominal, no_ec, no_bandwidth
 	}
 
-	public class EquipmentData : ModuleData<ModuleKsmContractEquipment, EquipmentData>
+	public abstract class EquipmentData<TModule, TData> : ModuleData<TModule, TData>
+	where TModule : ModuleKsmContractEquipment<TModule, TData>
+	where TData : EquipmentData<TModule, TData>, new()
 	{
 		public bool isRunning;  // true/false, if process controller is turned on or not
 		public string equipmentId;
@@ -53,7 +55,10 @@ namespace KerbalismContracts
 		}
 	}
 
-	public class ModuleKsmContractEquipment : KsmPartModule<ModuleKsmContractEquipment, EquipmentData>, IModuleInfo, IBackgroundModule, IPlannerModule
+	public abstract class ModuleKsmContractEquipment<TModule, TData> :
+		KsmPartModule<TModule, TData>, IModuleInfo, IBackgroundModule, IPlannerModule
+	where TModule : ModuleKsmContractEquipment<TModule, TData>
+	where TData : EquipmentData<TModule, TData>, new()
 	{
 		[KSPField] public string id;
 		[KSPField] public string title = string.Empty;
@@ -76,7 +81,7 @@ namespace KerbalismContracts
 		{
 			if (HighLogic.LoadedScene == GameScenes.LOADING)
 			{
-				EquipmentData prefabData = new EquipmentData();
+				TData prefabData = new TData();
 				prefabData.SetPartModuleReferences(this, this);
 				prefabData.OnFirstInstantiate(null, null);
 				moduleData = prefabData;
@@ -104,7 +109,7 @@ namespace KerbalismContracts
 			Toggle(moduleData, true);
 		}
 
-		public static void Toggle(EquipmentData equipmentData, bool isLoaded)
+		public static void Toggle(TData equipmentData, bool isLoaded)
 		{
 			equipmentData.isRunning = !equipmentData.isRunning;
 
@@ -123,7 +128,7 @@ namespace KerbalismContracts
 
 		public virtual void Update()
 		{
-			Events["ToggleEvent"].guiName = Lib.StatusToggle(Lib.Ellipsis(title, 25), EquipmentData.StatusInfo(moduleData.state));
+			Events["ToggleEvent"].guiName = Lib.StatusToggle(Lib.Ellipsis(title, 25), EquipmentData<TModule, TData>.StatusInfo(moduleData.state));
 		}
 
 		public virtual void FixedUpdate()
@@ -134,18 +139,18 @@ namespace KerbalismContracts
 			if (!vessel.TryGetVesselData(out VesselData vd))
 				return;
 
-			RunningUpdate(vessel, vd, moduleData, this, Kerbalism.elapsed_s);
+			RunningUpdate(vessel, vd, moduleData, (TModule)this, Kerbalism.elapsed_s);
 		}
 
 		public void BackgroundUpdate(VesselData vd, ProtoPartSnapshot protoPart, ProtoPartModuleSnapshot protoModule, double elapsed_s)
 		{
-			if (!ModuleData.TryGetModuleData<ModuleKsmContractEquipment, EquipmentData>(protoModule, out EquipmentData experimentData))
+			if (!ModuleData.TryGetModuleData<TModule, TData>(protoModule, out TData experimentData))
 				return;
 
-			RunningUpdate(vd.Vessel, vd, experimentData, this, elapsed_s);
+			RunningUpdate(vd.Vessel, vd, experimentData, (TModule)this, elapsed_s);
 		}
 
-		private static void RunningUpdate(Vessel v, VesselData vd, EquipmentData ed, ModuleKsmContractEquipment prefab, double elapsed_s)
+		private static void RunningUpdate(Vessel v, VesselData vd, TData ed, TModule prefab, double elapsed_s)
 		{
 			double connectionRate = API.VesselConnectionRate(v);
 			ed.state = GetState(v, vd, ed, prefab, connectionRate);
@@ -171,9 +176,12 @@ namespace KerbalismContracts
 						Localizer.Format("#KerCon_DataRate", Lib.HumanReadableRate(prefab.RequiredBandwidth), Lib.Color(Lib.HumanReadableRate(connectionRate), color)));
 				}
 			}
+			prefab.EquipmentUpdate(ed, v);
 		}
 
-		private static EquipmentState GetState(Vessel v, VesselData vd, EquipmentData ed, ModuleKsmContractEquipment prefab, double connectionRate)
+		protected virtual void EquipmentUpdate(TData ed, Vessel vessel) {}
+
+		private static EquipmentState GetState(Vessel v, VesselData vd, TData ed, TModule prefab, double connectionRate)
 		{
 			if (!ed.isRunning)
 				return EquipmentState.off;
@@ -210,4 +218,7 @@ namespace KerbalismContracts
 			}
 		}
 	}
+	
+	public class EquipmentData : EquipmentData<ModuleKsmContractEquipment, EquipmentData> { }
+	public class ModuleKsmContractEquipment : ModuleKsmContractEquipment<ModuleKsmContractEquipment, EquipmentData> { }
 }

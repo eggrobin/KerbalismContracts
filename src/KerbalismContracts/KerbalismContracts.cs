@@ -52,6 +52,8 @@ namespace KerbalismContracts
 
 		public static readonly EquipmentStateTracker EquipmentStates = new EquipmentStateTracker();
 
+		public static readonly Imaging Imaging = new Imaging();
+
 		private float sunObservationStatusTime;
 		private List<Surface> solarSurfaces;
 
@@ -80,6 +82,16 @@ namespace KerbalismContracts
 				sunObservationStatusTime = Time.time;
 				UpdateSunObservationStatus();
 			}
+		}
+
+		public void OnGUI()
+		{
+			Imaging.DrawDebugUI();
+		}
+
+		public void FixedUpdate()
+		{
+			Imaging.Update();
 		}
 
 		static readonly Dictionary<CelestialBody, List<Vessel>> vesselsPerSun = new Dictionary<CelestialBody, List<Vessel>>();
@@ -241,6 +253,7 @@ namespace KerbalismContracts
 			RadiationFieldTracker.Load(node);
 			ExperimentStateTracker.Load(node);
 			EquipmentStates.Load(node);
+			Imaging.ClearImagers();
 		}
 
 		public override void OnSave(ConfigNode node)
