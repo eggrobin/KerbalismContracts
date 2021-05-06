@@ -77,7 +77,8 @@ namespace KerbalismContracts
 
 		public void Update()
 		{
-			double t = Planetarium.GetUniversalTime();
+			timeSpentInIllumination = TimeSpan.Zero;
+			timeSpentInTextureUpdate = TimeSpan.Zero;
 			DateTime start = DateTime.UtcNow;
 			CelestialBody kerbin = FlightGlobals.GetHomeBody();
 			if (reset || kerbin_imaging == null)
@@ -135,123 +136,131 @@ namespace KerbalismContracts
 				}
 			}
 			var imagers = activeImagers.ToArray();
-			var kerbin_to_world = kerbin.scaledBody.transform.rotation;
-			var world_to_kerbin = kerbin_to_world.Inverse();
-			var kerbin_world_position = kerbin.position;
-			Vector3d sunInSurfaceFrame =
-				world_to_kerbin * (kerbin.referenceBody.position - kerbin_world_position);
-			double kerbin_radius = kerbin.Radius;
-			DateTime startIllumination = DateTime.UtcNow;
-			for (int y = 0; y != y_size; ++y)
-			{
-				var parallel = kerbin_imaging[y];
-				for (int x = parallel.x_begin; x != parallel.x_end; ++x)
-				{
-					//parallel.status[x].bestResolution = double.PositiveInfinity;
-					parallel.status[x].glint = false;
-					parallel.sun[x] = new SunSurfaceGeometry(
-						parallel.surface[x],
-						sunInSurfaceFrame);
-				}
-			}
-			DateTime stopIllumination = DateTime.UtcNow;
-			foreach (var imager in imagers)
-			{
-				var vesselWorldPosition = imager.platform.GetWorldPos3D();
-				Vector3d vesselInSurfaceFrame =
-					world_to_kerbin * (vesselWorldPosition - kerbin_world_position);
-				double xVessel = (0.5 + kerbin.GetLongitude(vesselWorldPosition) / 360) % 1;
+			double Δt = 5 * 60;
+			for (int n = (int)Math.Floor(Planetarium.GetUniversalTime() - lastUpdateUT); n >= 0; --n) {
+				double t = Planetarium.GetUniversalTime() - n * Δt;
+				var kerbin_to_world = kerbin.scaledBody.transform.rotation;
+				var world_to_kerbin = UnityEngine.Quaternion.Slerp(
+					lastKerbinRotation, kerbin_to_world.Inverse(),
+					(float)((t - lastUpdateUT) / (Planetarium.GetUniversalTime() - lastUpdateUT)));
+				var kerbin_world_position = kerbin.orbit.getPositionAtUT(t);
+				Vector3d sunInSurfaceFrame = world_to_kerbin *
+					(kerbin.referenceBody.getPositionAtUT(t) -kerbin_world_position);
+				double kerbin_radius = kerbin.Radius;
+				DateTime startIllumination = DateTime.UtcNow;
 				for (int y = 0; y != y_size; ++y)
 				{
 					var parallel = kerbin_imaging[y];
-					var closestPoint = parallel.surface[
-						(int)(parallel.x_begin + xVessel * (parallel.x_end - parallel.x_begin))];
-					if (!imager.IsVisibleFrom(new SurfaceSatelliteGeometry(
-							vesselInSurfaceFrame,
-							new SurfacePoint(closestPoint.vertical * kerbin_radius))))
-					{
-						continue;
-					}
 					for (int x = parallel.x_begin; x != parallel.x_end; ++x)
 					{
-						SunSurfaceSatelliteGeometry geometry = new SunSurfaceSatelliteGeometry(
-							vesselInSurfaceFrame,
+						//parallel.status[x].bestResolution = double.PositiveInfinity;
+						parallel.status[x].glint = false;
+						parallel.sun[x] = new SunSurfaceGeometry(
 							parallel.surface[x],
-							parallel.sun[x]);
-						if (imager.IsVisibleFrom(geometry.surfaceSatelliteGeometry))
-						{
-							if(imager.HorizontalResolution(geometry.surfaceSatelliteGeometry) < 10_000)
-							{
-								parallel.status[x].last10kmImagingTime = t;
-							}
-						}
+							sunInSurfaceFrame);
 					}
 				}
-			}
-
-			DateTime textureUpdateStart = DateTime.UtcNow;
-			var lowResPixels = lowResImagingMap.GetRawTextureData<UnityEngine.Color32>();
-			UnityEngine.Color32 black = XKCDColors.Black;
-			UnityEngine.Color32 lightSeafoam = XKCDColors.LightSeafoam;
-			UnityEngine.Color32 sea = XKCDColors.Sea;
-			UnityEngine.Color32 red = XKCDColors.Red;
-			UnityEngine.Color32 orangered = XKCDColors.Orangered;
-			UnityEngine.Color32 orange = XKCDColors.Orange;
-			UnityEngine.Color32 yellow = XKCDColors.Yellow;
-			UnityEngine.Color32 white = XKCDColors.White;
-			UnityEngine.Color32 grey = XKCDColors.Grey;
-			int i = 0;
-			int map_pixels = 0;
-			int covered_pixels6h = 0;
-			int covered_pixels3h = 0;
-			int covered_pixelsNow = 0;
-			for (int y = 0; y != y_size; ++y)
-			{
-				var parallel = kerbin_imaging[y];
-				for (int x = 0; x != x_size; ++x)
+				DateTime stopIllumination = DateTime.UtcNow;
+				foreach (var imager in imagers)
 				{
-					var status = parallel.status[x];
-					if (!status.on_map)
+					var vesselWorldPosition = imager.platform.orbit.getPositionAtUT(t);
+					Vector3d vesselInSurfaceFrame =
+						world_to_kerbin * (vesselWorldPosition - kerbin_world_position);
+					double xVessel = (0.5 + kerbin.GetLongitude(vesselWorldPosition) / 360) % 1;
+					for (int y = 0; y != y_size; ++y)
 					{
-						lowResPixels[i] = black;
-					}
-					else
-					{
-						++map_pixels;
+						var parallel = kerbin_imaging[y];
+						var closestPoint = parallel.surface[
+							(int)(parallel.x_begin + xVessel * (parallel.x_end - parallel.x_begin))];
+						if (!imager.IsVisibleFrom(new SurfaceSatelliteGeometry(
+								vesselInSurfaceFrame,
+								new SurfacePoint(closestPoint.vertical * kerbin_radius))))
 						{
-							if (t - status.last10kmImagingTime <= 60) {
-								++covered_pixelsNow;
-								++covered_pixels3h;
-								++covered_pixels6h;
-								lowResPixels[i] = red;
-							} else if (t - status.last10kmImagingTime  <= 60 * 60 * 3) {
-								++covered_pixels3h;
-								++covered_pixels6h;
-								lowResPixels[i] = orangered;
-							} else if (t - status.last10kmImagingTime  <= 60 * 60 * 6) {
-								++covered_pixels6h;
-								lowResPixels[i] = orange;
-							} else {
-								lowResPixels[i] = grey;
+							continue;
+						}
+						for (int x = parallel.x_begin; x != parallel.x_end; ++x)
+						{
+							SunSurfaceSatelliteGeometry geometry = new SunSurfaceSatelliteGeometry(
+								vesselInSurfaceFrame,
+								parallel.surface[x],
+								parallel.sun[x]);
+							if (imager.IsVisibleFrom(geometry.surfaceSatelliteGeometry))
+							{
+								if(imager.HorizontalResolution(geometry.surfaceSatelliteGeometry) < 10_000)
+								{
+									parallel.status[x].last10kmImagingTime = t;
+								}
 							}
 						}
-						if (status.ocean)
-						{
-							UnityEngine.Color32 blue = lowResPixels[i];
-							blue.b = 255;
-							lowResPixels[i] = blue;
-						}
 					}
-					++i;
 				}
+
+				DateTime textureUpdateStart = DateTime.UtcNow;
+				var lowResPixels = lowResImagingMap.GetRawTextureData<UnityEngine.Color32>();
+				UnityEngine.Color32 black = XKCDColors.Black;
+				UnityEngine.Color32 lightSeafoam = XKCDColors.LightSeafoam;
+				UnityEngine.Color32 sea = XKCDColors.Sea;
+				UnityEngine.Color32 red = XKCDColors.Red;
+				UnityEngine.Color32 orangered = XKCDColors.Orangered;
+				UnityEngine.Color32 orange = XKCDColors.Orange;
+				UnityEngine.Color32 yellow = XKCDColors.Yellow;
+				UnityEngine.Color32 white = XKCDColors.White;
+				UnityEngine.Color32 grey = XKCDColors.Grey;
+				int i = 0;
+				int map_pixels = 0;
+				int covered_pixels6h = 0;
+				int covered_pixels3h = 0;
+				int covered_pixelsNow = 0;
+				for (int y = 0; y != y_size; ++y)
+				{
+					var parallel = kerbin_imaging[y];
+					for (int x = 0; x != x_size; ++x)
+					{
+						var status = parallel.status[x];
+						if (!status.on_map)
+						{
+							lowResPixels[i] = black;
+						}
+						else
+						{
+							++map_pixels;
+							{
+								if (t - status.last10kmImagingTime <= 60) {
+									++covered_pixelsNow;
+									++covered_pixels3h;
+									++covered_pixels6h;
+									lowResPixels[i] = red;
+								} else if (t - status.last10kmImagingTime  <= 60 * 60 * 3) {
+									++covered_pixels3h;
+									++covered_pixels6h;
+									lowResPixels[i] = orangered;
+								} else if (t - status.last10kmImagingTime  <= 60 * 60 * 6) {
+									++covered_pixels6h;
+									lowResPixels[i] = orange;
+								} else {
+									lowResPixels[i] = grey;
+								}
+							}
+							if (status.ocean)
+							{
+								UnityEngine.Color32 blue = lowResPixels[i];
+								blue.b = 255;
+								lowResPixels[i] = blue;
+							}
+						}
+						++i;
+					}
+				}
+				timeSpentInIllumination += stopIllumination - startIllumination;
+				timeSpentInTextureUpdate += DateTime.UtcNow - textureUpdateStart;
+				coverageNow = (double)covered_pixelsNow / map_pixels;
+				coverage3h = (double)covered_pixels3h / map_pixels;
+				coverage6h = (double)covered_pixels6h / map_pixels;
+				lastUpdateUT = t;
+				lastKerbinRotation = kerbin.scaledBody.transform.rotation;
 			}
-			coverageNow = (double)covered_pixelsNow / map_pixels;
-			coverage3h = (double)covered_pixels3h / map_pixels;
-			coverage6h = (double)covered_pixels6h / map_pixels;
 			lowResImagingMap.Apply(updateMipmaps: false);
 			timeSpentInUpdate = DateTime.UtcNow - start;
-			timeSpentInIllumination = stopIllumination - startIllumination;
-			timeSpentInTextureUpdate = DateTime.UtcNow - textureUpdateStart;
 		}
 
 		public void DrawDebugUI()
@@ -313,6 +322,8 @@ namespace KerbalismContracts
 		private double coverageNow;
 		private double coverage3h;
 		private double coverage6h;
+		private double lastUpdateUT;
+		private UnityEngine.Quaternion lastKerbinRotation;
 		private TimeSpan timeSpentInUpdate;
 		private TimeSpan timeSpentInTextureUpdate;
 		private TimeSpan timeSpentInIllumination;
