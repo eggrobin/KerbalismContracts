@@ -63,11 +63,11 @@ namespace KerbalismContracts
 
 		public void RegisterImager(ModuleImager imager)
 		{
-			activeImagers.Add(imager);
+			activeImagers[imager.platform.id] = imager.properties;
 		}
 
 		public void UnregisterImager(ModuleImager imager) {
-			activeImagers.Remove(imager);
+			activeImagers.Remove(imager.platform.id);
 		}
 
 		public void ClearImagers()
@@ -81,9 +81,13 @@ namespace KerbalismContracts
 			timeSpentInTextureUpdate = TimeSpan.Zero;
 			DateTime start = DateTime.UtcNow;
 			CelestialBody kerbin = FlightGlobals.GetHomeBody();
-			if (reset || kerbin_imaging == null)
-			{
+			if (reset) {
 				reset = false;
+				kerbin_imaging = null;
+				return;
+			}
+			if (kerbin_imaging == null)
+			{
 				x_size = 512;
 				y_size = 256;
 				kerbin_imaging = new ImagingParallel[y_size];
@@ -136,17 +140,24 @@ namespace KerbalismContracts
 				}
 			}
 			var imagers = activeImagers.ToArray();
-			double Δt = 5 * 60;
-			for (int n = (int)Math.Floor(Planetarium.GetUniversalTime() - lastUpdateUT); n >= 0; --n) {
+			double Δt = 2 * 60;
+			if (lastUpdateUT == null || kerbin.scaledBody.transform.rotation == null) {
+				lastUpdateUT = Planetarium.GetUniversalTime();
+				lastKerbinRotation = kerbin.scaledBody.transform.rotation;
+			}
+			var current_kerbin_to_world = kerbin.scaledBody.transform.rotation;
+			for (int n = (int)Math.Floor((Planetarium.GetUniversalTime() - lastUpdateUT.Value) / Δt); n >= 0; --n) {
 				double t = Planetarium.GetUniversalTime() - n * Δt;
-				var kerbin_to_world = kerbin.scaledBody.transform.rotation;
-				var world_to_kerbin = UnityEngine.Quaternion.Slerp(
-					lastKerbinRotation, kerbin_to_world.Inverse(),
+				// TODO(egg): This will fail hilariously if the interval between updates is greater than half a day.
+				// It is probably broken in other ways.
+				var kerbin_to_world = UnityEngine.Quaternion.Slerp(
+					lastKerbinRotation.Value, current_kerbin_to_world,
 					(float)((t - lastUpdateUT) / (Planetarium.GetUniversalTime() - lastUpdateUT)));
+				var world_to_kerbin = kerbin_to_world.Inverse();
+				double kerbin_radius = kerbin.Radius;/*
 				var kerbin_world_position = kerbin.orbit.getPositionAtUT(t);
 				Vector3d sunInSurfaceFrame = world_to_kerbin *
 					(kerbin.referenceBody.getPositionAtUT(t) -kerbin_world_position);
-				double kerbin_radius = kerbin.Radius;
 				DateTime startIllumination = DateTime.UtcNow;
 				for (int y = 0; y != y_size; ++y)
 				{
@@ -160,19 +171,21 @@ namespace KerbalismContracts
 							sunInSurfaceFrame);
 					}
 				}
-				DateTime stopIllumination = DateTime.UtcNow;
+				DateTime stopIllumination = DateTime.UtcNow;*/
 				foreach (var imager in imagers)
 				{
-					var vesselWorldPosition = imager.platform.orbit.getPositionAtUT(t);
-					Vector3d vesselInSurfaceFrame =
-						world_to_kerbin * (vesselWorldPosition - kerbin_world_position);
-					double xVessel = (0.5 + kerbin.GetLongitude(vesselWorldPosition) / 360) % 1;
+					Vessel platform = FlightGlobals.FindVessel(imager.Key);
+					var vesselFromKerbinInAlice = platform.orbit.getRelativePositionAtUT(t);
+					var vesselFromKerbinInWorld = vesselFromKerbinInAlice.xzy;
+					Vector3d vesselInSurfaceFrame = world_to_kerbin * vesselFromKerbinInWorld;
+					double xVessel = (0.5 + kerbin.GetLongitude(
+						kerbin.position + current_kerbin_to_world * world_to_kerbin * vesselFromKerbinInWorld) / 360) % 1;
 					for (int y = 0; y != y_size; ++y)
 					{
 						var parallel = kerbin_imaging[y];
 						var closestPoint = parallel.surface[
 							(int)(parallel.x_begin + xVessel * (parallel.x_end - parallel.x_begin))];
-						if (!imager.IsVisibleFrom(new SurfaceSatelliteGeometry(
+						if (!imager.Value.IsVisibleFrom(new SurfaceSatelliteGeometry(
 								vesselInSurfaceFrame,
 								new SurfacePoint(closestPoint.vertical * kerbin_radius))))
 						{
@@ -184,11 +197,11 @@ namespace KerbalismContracts
 								vesselInSurfaceFrame,
 								parallel.surface[x],
 								parallel.sun[x]);
-							if (imager.IsVisibleFrom(geometry.surfaceSatelliteGeometry))
+							if (imager.Value.IsVisibleFrom(geometry.surfaceSatelliteGeometry))
 							{
-								if(imager.HorizontalResolution(geometry.surfaceSatelliteGeometry) < 10_000)
+								if(imager.Value.HorizontalResolution(geometry.surfaceSatelliteGeometry) < 10e3)
 								{
-									parallel.status[x].last10kmImagingTime = t;
+									parallel.status[x].last10kmImagingTime = Math.Max(parallel.status[x].last10kmImagingTime, t);
 								}
 							}
 						}
@@ -251,13 +264,13 @@ namespace KerbalismContracts
 						++i;
 					}
 				}
-				timeSpentInIllumination += stopIllumination - startIllumination;
+				//timeSpentInIllumination += stopIllumination - startIllumination;
 				timeSpentInTextureUpdate += DateTime.UtcNow - textureUpdateStart;
 				coverageNow = (double)covered_pixelsNow / map_pixels;
 				coverage3h = (double)covered_pixels3h / map_pixels;
 				coverage6h = (double)covered_pixels6h / map_pixels;
 				lastUpdateUT = t;
-				lastKerbinRotation = kerbin.scaledBody.transform.rotation;
+				lastKerbinRotation = current_kerbin_to_world;
 			}
 			lowResImagingMap.Apply(updateMipmaps: false);
 			timeSpentInUpdate = DateTime.UtcNow - start;
@@ -274,7 +287,7 @@ namespace KerbalismContracts
 			{
 				UnityEngine.GUILayout.TextArea($"{activeImagers.Count} active imagers");
 				UnityEngine.GUILayout.TextArea($"Update: {timeSpentInUpdate.TotalMilliseconds} ms");
-				UnityEngine.GUILayout.TextArea($"> illumination: {timeSpentInIllumination.TotalMilliseconds} ms");
+				//UnityEngine.GUILayout.TextArea($"> illumination: {timeSpentInIllumination.TotalMilliseconds} ms");
 				UnityEngine.GUILayout.TextArea($"> texture: {timeSpentInTextureUpdate.TotalMilliseconds} ms");
 				reset |= UnityEngine.GUILayout.Button("Reset");
 				UnityEngine.GUILayout.TextArea(
@@ -300,7 +313,7 @@ namespace KerbalismContracts
 		{
 			public bool on_map;
 			public bool ocean;
-			public bool glint;
+			//public bool glint;
 			public double last10kmImagingTime;
 		}
 		public struct SurfacePoint
@@ -316,18 +329,18 @@ namespace KerbalismContracts
 		}
 		private int x_size;
 		private int y_size;
-		private bool reset;
+		private bool reset = true;
 		private ImagingParallel[] kerbin_imaging;
 		private UnityEngine.Texture2D lowResImagingMap;
 		private double coverageNow;
 		private double coverage3h;
 		private double coverage6h;
-		private double lastUpdateUT;
-		private UnityEngine.Quaternion lastKerbinRotation;
+		private double? lastUpdateUT;
+		private UnityEngine.Quaternion? lastKerbinRotation;
 		private TimeSpan timeSpentInUpdate;
 		private TimeSpan timeSpentInTextureUpdate;
 		private TimeSpan timeSpentInIllumination;
-		private readonly HashSet<ModuleImager> activeImagers = new HashSet<ModuleImager>();
+		private readonly Dictionary<Guid, ImagerProperties> activeImagers = new Dictionary<Guid, ImagerProperties>();
 		private static readonly double[] resolutionThresholds = new double[] { 1000, 100, 10, 1 };
 	}
 }

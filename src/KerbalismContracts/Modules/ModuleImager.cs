@@ -9,13 +9,12 @@ namespace KerbalismContracts
 {
 	public class ImagerData : EquipmentData<ModuleImager, ImagerData> { }
 
-	public class ModuleImager : ModuleKsmContractEquipment<ModuleImager, ImagerData>
-	{
-		[KSPField] public double fieldOfViewInRadians;
+	public class ImagerProperties {
+		public double fieldOfViewInRadians;
 		// TODO(egg): Discretize this into bands, allow for multi-band imagers (whose
 		// images can be used for different purposes, but whose pointings are unified.
-		[KSPField] public double wavelength;
-		[KSPField] public double aperture;
+		public double wavelength;
+		public double aperture;
 
 		// The best angular resolution that this imager can achieve.
 		// For dim targets, noise will be the limiting factor instead; only use
@@ -38,9 +37,20 @@ namespace KerbalismContracts
 			// avoid planes looking through a mountain range.
 			return geometry.cosZenithalAngle > 0;
 		}
+	}
+
+	public class ModuleImager : ModuleKsmContractEquipment<ModuleImager, ImagerData>
+	{
+		[KSPField] public double fieldOfViewInRadians;
+		// TODO(egg): Discretize this into bands, allow for multi-band imagers (whose
+		// images can be used for different purposes, but whose pointings are unified.
+		[KSPField] public double wavelength;
+		[KSPField] public double aperture;
 
 		public Vessel platform => vessel ?? background_vessel;
 		private Vessel background_vessel;
+
+		public ImagerProperties properties => new ImagerProperties{fieldOfViewInRadians=fieldOfViewInRadians, wavelength=wavelength, aperture=aperture};
 
 		protected override void EquipmentUpdate(ImagerData ed, Vessel vessel)
 		{
@@ -51,6 +61,7 @@ namespace KerbalismContracts
 			}
 			else
 			{
+				UnityEngine.Debug.LogWarning("Unregistering imager on " + platform.name + ": " + ed.state);
 				KerbalismContracts.Imaging.UnregisterImager(this);
 			}
 		}
