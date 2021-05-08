@@ -61,7 +61,6 @@ namespace KerbalismContracts
 			}
 			else
 			{
-				UnityEngine.Debug.LogWarning("Unregistering imager on " + platform.name + ": " + ed.state);
 				KerbalismContracts.Imaging.UnregisterImager(this);
 			}
 		}

@@ -89,8 +89,8 @@ namespace KerbalismContracts
 			if (kerbin_imaging == null)
 			{
 				UnityEngine.Debug.LogWarning("Rebuilding map...");
-				x_size = 512;
-				y_size = 256;
+				x_size = small ? 256 : 512;
+				y_size = small ? 128 : 256;
 				kerbin_imaging = new ImagingParallel[y_size];
 				lowResImagingMap = new UnityEngine.Texture2D(x_size, y_size);
 				for (int y = 0; y < y_size; ++y)
@@ -176,8 +176,21 @@ namespace KerbalismContracts
 				foreach (var imager in imagers)
 				{
 					Vessel platform = FlightGlobals.FindVessel(imager.Key);
-					var vesselFromKerbinInAlice = platform.orbit.getRelativePositionAtUT(t);
-					var vesselFromKerbinInWorld = vesselFromKerbinInAlice.xzy;
+					Vector3d vesselFromKerbinInWorld;
+					if (platform.orbit.referenceBody == kerbin) {
+						var vesselFromKerbinInAlice = platform.orbit.getRelativePositionAtUT(t);
+						vesselFromKerbinInWorld = vesselFromKerbinInAlice.xzy;
+					} else {
+						Vector3d vesselFromSunInAlice = Vector3d.zero;
+						Vector3d kerbinFromSunInAlice = Vector3d.zero;
+						for (var orbit = platform.orbit; orbit != null; orbit = orbit.referenceBody?.orbit) {
+							vesselFromSunInAlice += orbit.getRelativePositionAtUT(t);
+						}
+						for (var orbit = kerbin.orbit; orbit != null; orbit = orbit.referenceBody?.orbit) {
+							kerbinFromSunInAlice += orbit.getRelativePositionAtUT(t);
+						}
+						vesselFromKerbinInWorld = (vesselFromSunInAlice - kerbinFromSunInAlice).xzy;
+					}
 					Vector3d vesselInSurfaceFrame = world_to_kerbin * vesselFromKerbinInWorld;
 					double xVessel = (0.5 + kerbin.GetLongitude(
 						kerbin.position + current_kerbin_to_world * world_to_kerbin * vesselFromKerbinInWorld) / 360) % 1;
@@ -208,71 +221,71 @@ namespace KerbalismContracts
 						}
 					}
 				}
-
-				DateTime textureUpdateStart = DateTime.UtcNow;
-				var lowResPixels = lowResImagingMap.GetRawTextureData<UnityEngine.Color32>();
-				UnityEngine.Color32 black = XKCDColors.Black;
-				UnityEngine.Color32 lightSeafoam = XKCDColors.LightSeafoam;
-				UnityEngine.Color32 sea = XKCDColors.Sea;
-				UnityEngine.Color32 red = XKCDColors.Red;
-				UnityEngine.Color32 orangered = XKCDColors.Orangered;
-				UnityEngine.Color32 orange = XKCDColors.Orange;
-				UnityEngine.Color32 yellow = XKCDColors.Yellow;
-				UnityEngine.Color32 white = XKCDColors.White;
-				UnityEngine.Color32 grey = XKCDColors.Grey;
-				int i = 0;
-				int map_pixels = 0;
-				int covered_pixels6h = 0;
-				int covered_pixels3h = 0;
-				int covered_pixelsNow = 0;
-				for (int y = 0; y != y_size; ++y)
-				{
-					var parallel = kerbin_imaging[y];
-					for (int x = 0; x != x_size; ++x)
-					{
-						var status = parallel.status[x];
-						if (!status.on_map)
-						{
-							lowResPixels[i] = black;
-						}
-						else
-						{
-							++map_pixels;
-							{
-								if (t - status.last10kmImagingTime <= 60) {
-									++covered_pixelsNow;
-									++covered_pixels3h;
-									++covered_pixels6h;
-									lowResPixels[i] = red;
-								} else if (t - status.last10kmImagingTime  <= 60 * 60 * 3) {
-									++covered_pixels3h;
-									++covered_pixels6h;
-									lowResPixels[i] = orangered;
-								} else if (t - status.last10kmImagingTime  <= 60 * 60 * 6) {
-									++covered_pixels6h;
-									lowResPixels[i] = orange;
-								} else {
-									lowResPixels[i] = grey;
-								}
-							}
-							if (status.ocean)
-							{
-								UnityEngine.Color32 blue = lowResPixels[i];
-								blue.b = 255;
-								lowResPixels[i] = blue;
-							}
-						}
-						++i;
-					}
-				}
-				//timeSpentInIllumination += stopIllumination - startIllumination;
-				timeSpentInTextureUpdate += DateTime.UtcNow - textureUpdateStart;
-				coverageNow = (double)covered_pixelsNow / map_pixels;
-				coverage3h = (double)covered_pixels3h / map_pixels;
-				coverage6h = (double)covered_pixels6h / map_pixels;
 				lastUpdateUT = t;
 				lastKerbinRotation = current_kerbin_to_world;
 			}
+
+			DateTime textureUpdateStart = DateTime.UtcNow;
+			var lowResPixels = lowResImagingMap.GetRawTextureData<UnityEngine.Color32>();
+			UnityEngine.Color32 black = XKCDColors.Black;
+			UnityEngine.Color32 lightSeafoam = XKCDColors.LightSeafoam;
+			UnityEngine.Color32 sea = XKCDColors.Sea;
+			UnityEngine.Color32 red = XKCDColors.Red;
+			UnityEngine.Color32 orangered = XKCDColors.Orangered;
+			UnityEngine.Color32 orange = XKCDColors.Orange;
+			UnityEngine.Color32 yellow = XKCDColors.Yellow;
+			UnityEngine.Color32 white = XKCDColors.White;
+			UnityEngine.Color32 grey = XKCDColors.Grey;
+			int i = 0;
+			int map_pixels = 0;
+			int covered_pixels6h = 0;
+			int covered_pixels3h = 0;
+			int covered_pixelsNow = 0;
+			for (int y = 0; y != y_size; ++y)
+			{
+				var parallel = kerbin_imaging[y];
+				for (int x = 0; x != x_size; ++x)
+				{
+					var status = parallel.status[x];
+					if (!status.on_map)
+					{
+						lowResPixels[i] = black;
+					}
+					else
+					{
+						++map_pixels;
+						{
+							if (lastUpdateUT - status.last10kmImagingTime <= 60) {
+								++covered_pixelsNow;
+								++covered_pixels3h;
+								++covered_pixels6h;
+								lowResPixels[i] = red;
+							} else if (lastUpdateUT - status.last10kmImagingTime  <= 60 * 60 * 3) {
+								++covered_pixels3h;
+								++covered_pixels6h;
+								lowResPixels[i] = orangered;
+							} else if (lastUpdateUT - status.last10kmImagingTime  <= 60 * 60 * 6) {
+								++covered_pixels6h;
+								lowResPixels[i] = orange;
+							} else {
+								lowResPixels[i] = grey;
+							}
+						}
+						if (status.ocean)
+						{
+							UnityEngine.Color32 blue = lowResPixels[i];
+							blue.b = 255;
+							lowResPixels[i] = blue;
+						}
+					}
+					++i;
+				}
+			}
+			timeSpentInTextureUpdate += DateTime.UtcNow - textureUpdateStart;
+			coverageNow = (double)covered_pixelsNow / map_pixels;
+			coverage3h = (double)covered_pixels3h / map_pixels;
+			coverage6h = (double)covered_pixels6h / map_pixels;
+
 			lowResImagingMap.Apply(updateMipmaps: false);
 			timeSpentInUpdate = DateTime.UtcNow - start;
 		}
@@ -288,9 +301,8 @@ namespace KerbalismContracts
 			{
 				UnityEngine.GUILayout.TextArea($"{activeImagers.Count} active imagers");
 				UnityEngine.GUILayout.TextArea($"Update: {timeSpentInUpdate.TotalMilliseconds} ms");
-				//UnityEngine.GUILayout.TextArea($"> illumination: {timeSpentInIllumination.TotalMilliseconds} ms");
-				UnityEngine.GUILayout.TextArea($"> texture: {timeSpentInTextureUpdate.TotalMilliseconds} ms");
 				reset |= UnityEngine.GUILayout.Button("Reset");
+				small = UnityEngine.GUILayout.Toggle(small, "Small map (effective on reset)");
 				UnityEngine.GUILayout.TextArea(
 					$@"1 μm at 10 km spatial resolution, current {
 					coverageNow:P1} / 3 h ({coverage3h:P1}) / 6 h ({coverage6h:P1})");
@@ -337,6 +349,7 @@ namespace KerbalismContracts
 		private double coverage3h;
 		private double coverage6h;
 		private double? lastUpdateUT;
+		private bool small = false;
 		private UnityEngine.Quaternion? lastKerbinRotation;
 		private TimeSpan timeSpentInUpdate;
 		private TimeSpan timeSpentInTextureUpdate;
