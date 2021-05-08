@@ -88,6 +88,7 @@ namespace KerbalismContracts
 			}
 			if (kerbin_imaging == null)
 			{
+				UnityEngine.Debug.LogWarning("Rebuilding map...");
 				x_size = 512;
 				y_size = 256;
 				kerbin_imaging = new ImagingParallel[y_size];

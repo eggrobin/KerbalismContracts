@@ -14,13 +14,10 @@ using KSP.UI.Screens.Flight;
 using System.Collections;
 using System.Linq.Expressions;
 using Contracts;
-using ContractConfigurator;
-using ContractConfigurator.Parameters;
 using KSP;
 using Contracts.Parameters;
 using FinePrint;
 using FinePrint.Utilities;
-using ContractConfigurator.Behaviour;
 
 
 namespace KerbalismContracts
@@ -106,31 +103,6 @@ namespace KerbalismContracts
 			// KSP will already log the stacktrace if the log level is error
 			if (level != LogLevel.Error)
 				UnityEngine.Debug.Log(stackTrace);
-		}
-
-		/// <summary>
-		/// Goes and finds the waypoint for our parameter.
-		/// </summary>
-		/// <param name="contract">The contract</param>
-		/// <returns>The waypoint used by our parameter.</returns>
-		public static Waypoint FetchWaypoint(Contract contract, int waypointIndex)
-		{
-			if (contract == null)
-				return null;
-
-			// Find the WaypointGenerator behaviours
-			IEnumerable<WaypointGenerator> waypointGenerators = ((ConfiguredContract)contract).Behaviours.OfType<WaypointGenerator>();
-
-			if (!waypointGenerators.Any())
-				return null;
-
-			var waypoint = waypointGenerators.SelectMany(wg => wg.Waypoints()).ElementAtOrDefault(waypointIndex);
-			if (waypoint == null)
-			{
-				Utils.Log($"Couldn't find waypoint index {waypointIndex} in WaypointGenerator behaviour(s).", LogLevel.Error);
-			}
-
-			return waypoint;
 		}
 	}
 }

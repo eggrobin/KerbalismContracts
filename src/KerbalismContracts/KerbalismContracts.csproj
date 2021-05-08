@@ -78,11 +78,6 @@
       <HintPath>$(KSPDevPath)/$(KSPDevDllsRelativePath)/UnityEngine.IMGUIModule.dll</HintPath>
       <Private>False</Private>
     </Reference>
-    <Reference Include="ContractConfigurator">
-      <HintPath>$(KSPDevPath)/GameData/ContractConfigurator/ContractConfigurator.dll</HintPath>
-      <IncludeInPackage>false</IncludeInPackage>
-      <Private>False</Private>
-    </Reference>
     <Reference Include="Kerbalism">
       <HintPath>$(KSPDevPath)/GameData/Kerbalism/Kerbalism.dll</HintPath>
       <Private>False</Private>
@@ -99,20 +94,12 @@
     <Compile Include="EquipmentStateTracker.cs" />
     <Compile Include="Modules\ModuleKsmContractEquipment.cs" />
     <Compile Include="Util\Specs.cs" />
-    <Compile Include="CC\Behavior\ShowRadiationFieldBehavior.cs" />
-    <Compile Include="CC\Requirement\HasRadiationFieldRequirement.cs" />
     <Compile Include="Util\RadiationField.cs" />
     <Compile Include="Util\Utils.cs" />
-    <Compile Include="CC\Parameter\RadiationFieldParameter.cs" />
-    <Compile Include="CC\Parameter\VesselRadiationFieldParameter.cs" />
-    <Compile Include="CC\Parameter\KerbalismContractParameter.cs" />
     <Compile Include="KerbalismContractRequirement.cs" />
     <Compile Include="SubRequirements\AboveWaypoint.cs" />
     <Compile Include="SubRequirements\EquipmentRunning.cs" />
-    <Compile Include="CC\Parameter\SubParams\DurationParameter.cs" />
-    <Compile Include="CC\Parameter\SubParams\SubRequirementParameter.cs" />
     <Compile Include="SubRequirements\Base\SubRequirement.cs" />
-    <Compile Include="CC\Parameter\SubParams\VesselStatusParameter.cs" />
     <Compile Include="SubRequirements\Altitude.cs" />
     <Compile Include="SubRequirements\Base\SubRequirementState.cs" />
     <Compile Include="SubRequirements\Evaluation\EvaluationContext.cs" />
@@ -120,21 +107,6 @@
     <Compile Include="SubRequirements\SolarElevation.cs" />
     <Compile Include="ExperimentStateTracker.cs" />
     <Compile Include="SubRequirements\ExperimentRunning.cs" />
-    <Compile Include="CC\Parameter\VesselExperimentRunningParameter.cs" />
-    <Compile Include="CC\Requirement\ProgressCelestialBodyRequirement.cs" />
-    <Compile Include="CC\Requirement\ProgressCelestialBodyRequirement\FlyByRequirement.cs" />
-    <Compile Include="CC\Requirement\ProgressCelestialBodyRequirement\EscapeRequirement.cs" />
-    <Compile Include="CC\Requirement\ProgressCelestialBodyRequirement\ReturnFromSurfaceRequirement.cs" />
-    <Compile Include="CC\Requirement\ProgressCelestialBodyRequirement\BaseConstructionRequirement.cs" />
-    <Compile Include="CC\Requirement\ProgressCelestialBodyRequirement\DockingRequirement.cs" />
-    <Compile Include="CC\Requirement\ProgressCelestialBodyRequirement\SurfaceEVARequirement.cs" />
-    <Compile Include="CC\Requirement\ProgressCelestialBodyRequirement\SplashDownRequirement.cs" />
-    <Compile Include="CC\Requirement\ProgressCelestialBodyRequirement\ReturnFromFlyByRequirement.cs" />
-    <Compile Include="CC\Requirement\ProgressCelestialBodyRequirement\ReturnFromOrbitRequirement.cs" />
-    <Compile Include="CC\Requirement\ProgressCelestialBodyRequirement\RendezvousRequirement.cs" />
-    <Compile Include="CC\Requirement\ProgressCelestialBodyRequirement\LandingRequirement.cs" />
-    <Compile Include="CC\Requirement\ProgressCelestialBodyRequirement\OrbitRequirement.cs" />
-    <Compile Include="CC\Requirement\RadiationFieldsHidden.cs" />
     <Compile Include="SubRequirements\Evaluation\BodySurfaceObservation.cs" />
     <Compile Include="External\Principia.cs" />
     <Compile Include="SubRequirements\Evaluation\UniverseEvaluator.cs" />
