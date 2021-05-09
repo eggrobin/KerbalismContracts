@@ -191,7 +191,7 @@ namespace KerbalismContracts
 				}
 			}
 			var imagers = activeImagers.ToArray();
-			double Δt = 2 * 60;
+			double Δt = 60;
 			if (lastUpdateUT == null || kerbin.scaledBody.transform.rotation == null)
 			{
 				lastUpdateUT = Planetarium.GetUniversalTime();
@@ -303,7 +303,7 @@ namespace KerbalismContracts
 															Math.Max(parallel.nearInfraredStatus[x].lastImagingTime[i], t);
 														break;
 													case OpticalBand.Visible:
-														if (geometry.cosGlintAngle < cos15degrees)
+														if (geometry.cosGlintAngle > cos15degrees)
 														{
 															parallel.glintedVisibleStatus[x].lastImagingTime[i] =
 																Math.Max(parallel.glintedVisibleStatus[x].lastImagingTime[i], t);
@@ -345,7 +345,7 @@ namespace KerbalismContracts
 			UnityEngine.Color32 orangered = XKCDColors.Orangered;
 			UnityEngine.Color32 orange = XKCDColors.Orange;
 			UnityEngine.Color32 yellow = XKCDColors.Yellow;
-			UnityEngine.Color32 white = XKCDColors.White;
+			UnityEngine.Color32 beige = XKCDColors.Beige;
 			UnityEngine.Color32 grey = XKCDColors.Grey;
 			int pixel = 0;
 			int map_pixels = 0;
@@ -375,6 +375,14 @@ namespace KerbalismContracts
 					{
 						pixels[pixel] = black;
 					}
+					else if (map.ocean && !showOceans)
+					{
+						pixels[pixel] = sea;
+					}
+					else if (!map.ocean && !showLand)
+					{
+						pixels[pixel] = beige;
+					}
 					else
 					{
 						++map_pixels;
@@ -391,7 +399,7 @@ namespace KerbalismContracts
 								leastImagingAge = Math.Min(
 									leastImagingAge, t - glintedStatus.lastImagingTime[chosenResolutionIndex]);
 							}
-							if (leastImagingAge == double.PositiveInfinity)
+							if (leastImagingAge > freshnessThresholds.Last())
 							{
 								pixels[pixel] = grey;
 							}
@@ -451,12 +459,20 @@ namespace KerbalismContracts
 								}
 							}
 						}
-						if (map.ocean)
+						if (showLand && showOceans && map.ocean && (
+							(x - 1> parallel.x_begin && !parallel.map[x - 1].ocean) ||
+							(x + 1 < parallel.x_end && !parallel.map[x + 1].ocean)))
 						{
-							UnityEngine.Color32 blue = pixels[pixel];
-							blue.b = 255;
-							pixels[pixel] = blue;
+							pixels[pixel] = sea;
 						}
+					}
+					if (map.on_map && showSun && parallel.sun[x].cosSolarZenithAngle < cos75degrees)
+					{
+						var c = pixels[pixel];
+						c.r /= 2;
+						c.g /= 2;
+						c.b /= 2;
+						pixels[pixel] = c;
 					}
 					++pixel;
 				}
@@ -484,6 +500,15 @@ namespace KerbalismContracts
 				UnityEngine.GUILayout.Label("Sunglint (visible only): ");
 				showGlinted = UnityEngine.GUILayout.Toggle(showGlinted, "affected");
 				showUnglinted = UnityEngine.GUILayout.Toggle(showUnglinted, "unaffected");
+			}
+		}
+
+		private void DrawLandSeaSelector()
+		{
+			using (new UnityEngine.GUILayout.HorizontalScope())
+			{
+				showLand = UnityEngine.GUILayout.Toggle(showLand, " Land imaging");
+				showOceans = UnityEngine.GUILayout.Toggle(showOceans, " Sea imaging");
 			}
 		}
 
@@ -594,11 +619,17 @@ namespace KerbalismContracts
 			{
 				UnityEngine.GUILayout.TextArea($"{activeImagers.Count} active imagers");
 				UnityEngine.GUILayout.TextArea($"Update: {timeSpentInUpdate.TotalMilliseconds} ms");
-				solarParallax = UnityEngine.GUILayout.Toggle(solarParallax, "Solar parallax");
+				solarParallax = UnityEngine.GUILayout.Toggle(solarParallax, "Solar parallax (slow, likely pointless)");
 				reset |= UnityEngine.GUILayout.Button("Reset");
 				small = UnityEngine.GUILayout.Toggle(small, "Small map (effective on reset)");
+				UnityEngine.GUILayout.Label("—————");
+				UnityEngine.GUILayout.TextArea(CoverageSummary());
 				DrawMapTypeSelector();
+				showSun = UnityEngine.GUILayout.Toggle(showSun, "Show current day/night");
+				UnityEngine.GUILayout.Box(minimap);
+				UnityEngine.GUILayout.Label("——— Product options ———");
 				DrawBandSelector();
+				DrawLandSeaSelector();
 				DrawGlintSelector();
 				switch (mapType)
 				{
@@ -609,8 +640,46 @@ namespace KerbalismContracts
 						DrawFreshnessSelector();
 						break;
 				}
-				UnityEngine.GUILayout.TextArea(CoverageSummary());
-				UnityEngine.GUILayout.Box(minimap);
+				UnityEngine.GUILayout.Label("Preset products: ");
+				using (new UnityEngine.GUILayout.HorizontalScope())
+				{
+					if (UnityEngine.GUILayout.Button("Weather forecasting"))
+					{
+						mapBand = OpticalBand.MidInfrared;
+						chosenResolutionIndex = resolutionThresholds.IndexOf(10e3);
+						chosenFreshnessIndex = freshnessThresholds.IndexOf(6 * 3600);
+						showLand = true;
+						showOceans = true;
+					}
+					if (UnityEngine.GUILayout.Button("Fire monitoring"))
+					{
+						mapBand = OpticalBand.MidInfrared;
+						chosenResolutionIndex = resolutionThresholds.IndexOf(100);
+						chosenFreshnessIndex = freshnessThresholds.IndexOf(24 * 3600);
+						showLand = true;
+						showOceans = false;
+					}
+					if (UnityEngine.GUILayout.Button("Ocean colour"))
+					{
+						mapBand = OpticalBand.Visible;
+						chosenResolutionIndex = resolutionThresholds.IndexOf(1e3);
+						chosenFreshnessIndex = freshnessThresholds.IndexOf(48 * 3600);
+						showLand = false;
+						showOceans = true;
+						showGlinted = false;
+						showUnglinted = true;
+					}
+					if (UnityEngine.GUILayout.Button("Oil spill"))
+					{
+						mapBand = OpticalBand.Visible;
+						chosenResolutionIndex = resolutionThresholds.IndexOf(1e3);
+						chosenFreshnessIndex = freshnessThresholds.IndexOf(48 * 3600);
+						showLand = false;
+						showOceans = true;
+						showGlinted = true;
+						showUnglinted = false;
+					}
+				}
 			}
 			UnityEngine.GUI.DragWindow();
 		}
@@ -659,9 +728,11 @@ namespace KerbalismContracts
 		private static bool small = false;
 		private static bool solarParallax;
 
-		private static OpticalBand mapBand;
-		private bool showGlinted;
-		private static bool showUnglinted;
+		private static OpticalBand mapBand = OpticalBand.Visible;
+		private static bool showGlinted = true;
+		private static bool showUnglinted = true;
+		private static bool showOceans;
+		private static bool showLand = true;
 		private enum MapType
 		{
 			Resolution,
@@ -683,6 +754,8 @@ namespace KerbalismContracts
 		private double chosenResolution => resolutionThresholds[chosenResolutionIndex];
 		private double[] resolutionCoverage = new double[5];
 		private static MapType mapType;
+
+		private static bool showSun = true;
 
 		private UnityEngine.Quaternion? lastKerbinRotation;
 		private TimeSpan timeSpentInUpdate;
