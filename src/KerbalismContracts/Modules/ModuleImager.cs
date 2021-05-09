@@ -9,17 +9,38 @@ namespace KerbalismContracts
 {
 	public class ImagerData : EquipmentData<ModuleImager, ImagerData> { }
 
+	public enum OpticalBand {
+		NearUltraviolet,
+		Visible,
+		NearInfrared,
+		MidInfrared,
+		FarInfrared,
+	}
+
+	public static class OpticalBandExtensions {
+		public static double RepresentativeWavelength(this OpticalBand band) {
+			return band switch
+			{
+				OpticalBand.NearUltraviolet =>  66e-9,  // Photometric U band.
+				OpticalBand.Visible => 555e-9,  // 540 THz Green.
+				OpticalBand.NearInfrared => 1e-6,
+				OpticalBand.MidInfrared => 10e-6,
+				OpticalBand.FarInfrared => 100e-6,
+				_ => throw new ArgumentException($"Unexpected optical band {band}"),
+			};
+		}
+	}
+
 	public class ImagerProperties {
+
 		public double fieldOfViewInRadians;
-		// TODO(egg): Discretize this into bands, allow for multi-band imagers (whose
-		// images can be used for different purposes, but whose pointings are unified.
-		public double wavelength;
+		public OpticalBand band;
 		public double aperture;
 
 		// The best angular resolution that this imager can achieve.
 		// For dim targets, noise will be the limiting factor instead; only use
 		// this directly for bright targets.
-		public double sinDiffractionLimitedAngularResolution => 1.22 * wavelength / aperture;
+		public double sinDiffractionLimitedAngularResolution => 1.22 * band.RepresentativeWavelength() / aperture;
 
 		// No assumption is made regarding visibility; the caller must ensure
 		// that surfacePoint is within the unoccluded field of view of the
@@ -42,15 +63,33 @@ namespace KerbalismContracts
 	public class ModuleImager : ModuleKsmContractEquipment<ModuleImager, ImagerData>
 	{
 		[KSPField] public double fieldOfViewInRadians;
-		// TODO(egg): Discretize this into bands, allow for multi-band imagers (whose
-		// images can be used for different purposes, but whose pointings are unified.
-		[KSPField] public double wavelength;
+		[KSPField] public string opticalBands;
 		[KSPField] public double aperture;
 
 		public Vessel platform => vessel ?? background_vessel;
 		private Vessel background_vessel;
+		public IEnumerable<OpticalBand> Bands { get; private set; }
 
-		public ImagerProperties properties => new ImagerProperties{fieldOfViewInRadians=fieldOfViewInRadians, wavelength=wavelength, aperture=aperture};
+		public override void OnLoad(ConfigNode node)
+		{
+			base.OnLoad(node);
+			var bands = new List<OpticalBand>();
+			foreach (string name in opticalBands.Split(' '))
+			{
+				if (!Enum.TryParse(name, out OpticalBand band))
+				{
+					UnityEngine.Debug.LogException(new ArgumentException(
+						$"Unexpected band {name}"));
+				}
+				bands.Add(band);
+			}
+			Bands = bands;
+		}
+
+		public IEnumerable<ImagerProperties> properties =>
+			from band in Bands select new ImagerProperties{
+				fieldOfViewInRadians=fieldOfViewInRadians,
+				band=band, aperture=aperture};
 
 		protected override void EquipmentUpdate(ImagerData ed, Vessel vessel)
 		{
