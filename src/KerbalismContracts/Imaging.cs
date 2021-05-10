@@ -39,6 +39,7 @@ namespace KerbalismContracts
 
 		public const double cos15degrees = 0.96592582628906829;
 		public const double cos75degrees = 0.25881904510252076;
+		public const double cos105degrees = -cos75degrees;
 
 		public struct SunSurfaceGeometry
 		{
@@ -139,10 +140,10 @@ namespace KerbalismContracts
 						cosLatitude = Math.Cos(φ),
 						sinLatitude = sinφ,
 						map = new MapPoint[x_size],
-						midInfraredStatus = new ImagingStatus[x_size],
-						nearInfraredStatus = new ImagingStatus[x_size],
-						unglintedVisibleStatus = new ImagingStatus[x_size],
-						glintedVisibleStatus = new ImagingStatus[x_size],
+						midInfrared = new ImagingStatus[x_size],
+						nightVisNIR = new ImagingStatus[x_size],
+						unglintedReflectiveVisNIR = new ImagingStatus[x_size],
+						glintedReflectiveVisNIR = new ImagingStatus[x_size],
 						sun = new SunSurfaceGeometry[x_size],
 						surface = new SurfacePoint[x_size]
 					};
@@ -175,16 +176,16 @@ namespace KerbalismContracts
 								kerbin.scaledBody.transform.rotation.Inverse() *
 								(kerbin.GetWorldSurfacePosition(φ_deg, λ_deg, altitude) - kerbin.position));
 							parallel.map[x].ocean = altitude == 0;
-							parallel.midInfraredStatus[x].lastImagingTime = new double[resolutionThresholds.Length];
-							parallel.nearInfraredStatus[x].lastImagingTime = new double[resolutionThresholds.Length];
-							parallel.glintedVisibleStatus[x].lastImagingTime = new double[resolutionThresholds.Length];
-							parallel.unglintedVisibleStatus[x].lastImagingTime = new double[resolutionThresholds.Length];
+							parallel.midInfrared[x].lastImagingTime = new double[resolutionThresholds.Length];
+							parallel.nightVisNIR[x].lastImagingTime = new double[resolutionThresholds.Length];
+							parallel.glintedReflectiveVisNIR[x].lastImagingTime = new double[resolutionThresholds.Length];
+							parallel.unglintedReflectiveVisNIR[x].lastImagingTime = new double[resolutionThresholds.Length];
 							for (int i = 0; i < resolutionThresholds.Length; ++i)
 							{
-								parallel.midInfraredStatus[x].lastImagingTime[i] = double.NegativeInfinity;
-								parallel.nearInfraredStatus[x].lastImagingTime[i] = double.NegativeInfinity;
-								parallel.glintedVisibleStatus[x].lastImagingTime[i] = double.NegativeInfinity;
-								parallel.unglintedVisibleStatus[x].lastImagingTime[i] = double.NegativeInfinity;
+								parallel.midInfrared[x].lastImagingTime[i] = double.NegativeInfinity;
+								parallel.nightVisNIR[x].lastImagingTime[i] = double.NegativeInfinity;
+								parallel.glintedReflectiveVisNIR[x].lastImagingTime[i] = double.NegativeInfinity;
+								parallel.unglintedReflectiveVisNIR[x].lastImagingTime[i] = double.NegativeInfinity;
 							}
 						}
 					}
@@ -280,7 +281,8 @@ namespace KerbalismContracts
 								foreach (var instrument in instruments)
 								{
 									bool sunlit = parallel.sun[x].cosSolarZenithAngle > cos75degrees;
-									if (!sunlit && instrument.band != OpticalBand.MidInfrared)
+									bool night = parallel.sun[x].cosSolarZenithAngle < cos105degrees;
+									if (instrument.band == OpticalBand.VisNIR && !sunlit && !night)
 									{
 										continue;
 									}
@@ -295,23 +297,27 @@ namespace KerbalismContracts
 												switch (instrument.band)
 												{
 													case OpticalBand.MidInfrared:
-														parallel.midInfraredStatus[x].lastImagingTime[i] =
-															Math.Max(parallel.midInfraredStatus[x].lastImagingTime[i], t);
+														parallel.midInfrared[x].lastImagingTime[i] =
+															Math.Max(parallel.midInfrared[x].lastImagingTime[i], t);
 														break;
-													case OpticalBand.NearInfrared:
-														parallel.nearInfraredStatus[x].lastImagingTime[i] =
-															Math.Max(parallel.nearInfraredStatus[x].lastImagingTime[i], t);
-														break;
-													case OpticalBand.Visible:
-														if (geometry.cosGlintAngle > cos15degrees)
+													case OpticalBand.VisNIR:
+														if (sunlit)
 														{
-															parallel.glintedVisibleStatus[x].lastImagingTime[i] =
-																Math.Max(parallel.glintedVisibleStatus[x].lastImagingTime[i], t);
+															if (geometry.cosGlintAngle > cos15degrees)
+															{
+																parallel.glintedReflectiveVisNIR[x].lastImagingTime[i] =
+																	Math.Max(parallel.glintedReflectiveVisNIR[x].lastImagingTime[i], t);
+															}
+															else
+															{
+																parallel.unglintedReflectiveVisNIR[x].lastImagingTime[i] =
+																	Math.Max(parallel.unglintedReflectiveVisNIR[x].lastImagingTime[i], t);
+															}
 														}
-														else
+														else if (night)
 														{
-															parallel.unglintedVisibleStatus[x].lastImagingTime[i] =
-																Math.Max(parallel.unglintedVisibleStatus[x].lastImagingTime[i], t);
+															parallel.nightVisNIR[x].lastImagingTime[i] =
+																Math.Max(parallel.nightVisNIR[x].lastImagingTime[i], t);
 														}
 														break;
 												}
@@ -357,19 +363,19 @@ namespace KerbalismContracts
 				for (int x = 0; x != x_size; ++x)
 				{
 					var map = parallel.map[x];
-					var unglintedStatus = mapBand switch
+					var unglintedStatus = mapProduct switch
 					{
-						OpticalBand.MidInfrared => parallel.midInfraredStatus[x],
-						OpticalBand.NearInfrared => parallel.nearInfraredStatus[x],
-						OpticalBand.Visible => parallel.unglintedVisibleStatus[x],
-						_ => throw new ArgumentException($"Unexpected map band {mapBand}")
+						MapProduct.EmissiveMIR => parallel.midInfrared[x],
+						MapProduct.NightVisNIR => parallel.nightVisNIR[x],
+						MapProduct.ReflectiveVisNIR => parallel.unglintedReflectiveVisNIR[x],
+						_ => throw new ArgumentException($"Unexpected map band {mapProduct}")
 					};
-					var glintedStatus = mapBand switch
+					var glintedStatus = mapProduct switch
 					{
-						OpticalBand.MidInfrared => parallel.midInfraredStatus[x],
-						OpticalBand.NearInfrared => parallel.nearInfraredStatus[x],
-						OpticalBand.Visible => parallel.glintedVisibleStatus[x],
-						_ => throw new ArgumentException($"Unexpected map band {mapBand}")
+						MapProduct.EmissiveMIR => parallel.midInfrared[x],
+						MapProduct.NightVisNIR => parallel.nightVisNIR[x],
+						MapProduct.ReflectiveVisNIR => parallel.glintedReflectiveVisNIR[x],
+						_ => throw new ArgumentException($"Unexpected map band {mapProduct}")
 					};
 					if (!map.on_map)
 					{
@@ -389,12 +395,12 @@ namespace KerbalismContracts
 						if (mapType == MapType.Freshness)
 						{
 							double leastImagingAge = double.PositiveInfinity;
-							if (mapBand != OpticalBand.Visible || showUnglinted)
+							if (mapProduct != MapProduct.ReflectiveVisNIR || showUnglinted)
 							{
 								leastImagingAge = Math.Min(
 									leastImagingAge, t - unglintedStatus.lastImagingTime[chosenResolutionIndex]);
 							}
-							if (mapBand == OpticalBand.Visible && showGlinted)
+							if (mapProduct == MapProduct.ReflectiveVisNIR && showGlinted)
 							{
 								leastImagingAge = Math.Min(
 									leastImagingAge, t - glintedStatus.lastImagingTime[chosenResolutionIndex]);
@@ -422,7 +428,7 @@ namespace KerbalismContracts
 						else if (mapType == MapType.Resolution)
 						{
 							int finestResolutionIndex = resolutionThresholds.Length;
-							if (mapBand != OpticalBand.Visible || showUnglinted)
+							if (mapProduct != MapProduct.ReflectiveVisNIR || showUnglinted)
 							{
 								for (int i = 0; i < resolutionThresholds.Length; ++i)
 								{
@@ -434,7 +440,7 @@ namespace KerbalismContracts
 									}
 								}
 							}
-							if (mapBand == OpticalBand.Visible && showGlinted)
+							if (mapProduct == MapProduct.ReflectiveVisNIR && showGlinted)
 							{
 								for (int i = 0; i < resolutionThresholds.Length; ++i)
 								{
@@ -466,13 +472,23 @@ namespace KerbalismContracts
 							pixels[pixel] = sea;
 						}
 					}
-					if (map.on_map && showSun && parallel.sun[x].cosSolarZenithAngle < cos75degrees)
+					if (map.on_map && showSun)
 					{
-						var c = pixels[pixel];
-						c.r /= 2;
-						c.g /= 2;
-						c.b /= 2;
-						pixels[pixel] = c;
+						if (parallel.sun[x].cosSolarZenithAngle < cos105degrees)
+						{
+							var c = pixels[pixel];
+							c.r /= 2;
+							c.g /= 2;
+							c.b /= 2;
+							pixels[pixel] = c;
+						} else if (parallel.sun[x].cosSolarZenithAngle < cos75degrees)
+						{
+							var c = pixels[pixel];
+							c.r = (byte)(2 * c.r / 3);
+							c.g = (byte)(2 * c.g / 3);
+							c.b = (byte)(2 * c.b / 3);
+							pixels[pixel] = c;
+						}
 					}
 					++pixel;
 				}
@@ -497,7 +513,7 @@ namespace KerbalismContracts
 		{
 			using (new UnityEngine.GUILayout.HorizontalScope())
 			{
-				UnityEngine.GUILayout.Label("Sunglint (visible only): ");
+				UnityEngine.GUILayout.Label("Sunglint (reflective only): ");
 				showGlinted = UnityEngine.GUILayout.Toggle(showGlinted, "affected");
 				showUnglinted = UnityEngine.GUILayout.Toggle(showUnglinted, "unaffected");
 			}
@@ -569,17 +585,17 @@ namespace KerbalismContracts
 			using (new UnityEngine.GUILayout.HorizontalScope())
 			{
 				UnityEngine.GUILayout.Label("Band: ");
-				if (UnityEngine.GUILayout.Toggle(mapBand == OpticalBand.MidInfrared, "Mid-IR (emissive)"))
+				if (UnityEngine.GUILayout.Toggle(mapProduct == MapProduct.EmissiveMIR, "Mid-IR (emissive)"))
 				{
-					mapBand = OpticalBand.MidInfrared;
+					mapProduct = MapProduct.EmissiveMIR;
 				}
-				if (UnityEngine.GUILayout.Toggle(mapBand == OpticalBand.NearInfrared, "Near-IR (reflective)"))
+				if (UnityEngine.GUILayout.Toggle(mapProduct == MapProduct.NightVisNIR, "Vis-NIR (night emissive)"))
 				{
-					mapBand = OpticalBand.NearInfrared;
+					mapProduct = MapProduct.NightVisNIR;
 				}
-				if (UnityEngine.GUILayout.Toggle(mapBand == OpticalBand.Visible, "Visible (reflective)"))
+				if (UnityEngine.GUILayout.Toggle(mapProduct == MapProduct.ReflectiveVisNIR, "Vis-NIR (reflective)"))
 				{
-					mapBand = OpticalBand.Visible;
+					mapProduct = MapProduct.ReflectiveVisNIR;
 				}
 			}
 		}
@@ -590,7 +606,7 @@ namespace KerbalismContracts
 			switch (mapType)
 			{
 				case MapType.Freshness:
-					result = $@"{mapBand} at {
+					result = $@"{mapProduct} at {
 						(chosenResolution > 1000 ? $"{chosenResolution / 1000:N0} km" : $"{chosenResolution:N0} m")}";
 					for (int i = 0; i < freshnessThresholds.Length; ++i)
 					{
@@ -600,7 +616,7 @@ namespace KerbalismContracts
 					}
 					break;
 				case MapType.Resolution:
-					result = $@"{mapBand} at {
+					result = $@"{mapProduct} at {
 						(chosenFreshness > 3600 ? $"{chosenFreshness / 3600:N0} h" : $" current time")}";
 					for (int i = 0; i < resolutionThresholds.Length; ++i)
 					{
@@ -645,7 +661,8 @@ namespace KerbalismContracts
 				{
 					if (UnityEngine.GUILayout.Button("Weather forecasting"))
 					{
-						mapBand = OpticalBand.MidInfrared;
+						mapProduct = MapProduct.EmissiveMIR;
+						showSun = false;
 						chosenResolutionIndex = resolutionThresholds.IndexOf(10e3);
 						chosenFreshnessIndex = freshnessThresholds.IndexOf(6 * 3600);
 						showLand = true;
@@ -653,7 +670,8 @@ namespace KerbalismContracts
 					}
 					if (UnityEngine.GUILayout.Button("Fire monitoring"))
 					{
-						mapBand = OpticalBand.MidInfrared;
+						mapProduct = MapProduct.EmissiveMIR;
+						showSun = false;
 						chosenResolutionIndex = resolutionThresholds.IndexOf(100);
 						chosenFreshnessIndex = freshnessThresholds.IndexOf(24 * 3600);
 						showLand = true;
@@ -661,7 +679,8 @@ namespace KerbalismContracts
 					}
 					if (UnityEngine.GUILayout.Button("Ocean colour"))
 					{
-						mapBand = OpticalBand.Visible;
+						mapProduct = MapProduct.ReflectiveVisNIR;
+						showSun = true;
 						chosenResolutionIndex = resolutionThresholds.IndexOf(1e3);
 						chosenFreshnessIndex = freshnessThresholds.IndexOf(48 * 3600);
 						showLand = false;
@@ -671,13 +690,26 @@ namespace KerbalismContracts
 					}
 					if (UnityEngine.GUILayout.Button("Oil spill"))
 					{
-						mapBand = OpticalBand.Visible;
+						mapProduct = MapProduct.ReflectiveVisNIR;
+						showSun = true;
 						chosenResolutionIndex = resolutionThresholds.IndexOf(1e3);
 						chosenFreshnessIndex = freshnessThresholds.IndexOf(48 * 3600);
 						showLand = false;
 						showOceans = true;
 						showGlinted = true;
 						showUnglinted = false;
+					}
+				}
+				using (new UnityEngine.GUILayout.HorizontalScope())
+				{
+					if (UnityEngine.GUILayout.Button("Urbanization/Light pollution"))
+					{
+						mapProduct = MapProduct.EmissiveMIR;
+						showSun = true;
+						chosenResolutionIndex = resolutionThresholds.IndexOf(1e3);
+						chosenFreshnessIndex = freshnessThresholds.IndexOf(48 * 3600);
+						showLand = true;
+						showOceans = false;
 					}
 				}
 			}
@@ -692,10 +724,10 @@ namespace KerbalismContracts
 			public int x_begin;
 			public int x_end;
 			public MapPoint[] map;
-			public ImagingStatus[] midInfraredStatus;
-			public ImagingStatus[] nearInfraredStatus;
-			public ImagingStatus[] unglintedVisibleStatus;
-			public ImagingStatus[] glintedVisibleStatus;
+			public ImagingStatus[] midInfrared;
+			public ImagingStatus[] nightVisNIR;
+			public ImagingStatus[] unglintedReflectiveVisNIR;
+			public ImagingStatus[] glintedReflectiveVisNIR;
 			public SunSurfaceGeometry[] sun;
 			public SurfacePoint[] surface;
 		}
@@ -728,7 +760,12 @@ namespace KerbalismContracts
 		private static bool small = false;
 		private static bool solarParallax;
 
-		private static OpticalBand mapBand = OpticalBand.Visible;
+		private enum MapProduct {
+			ReflectiveVisNIR,
+			NightVisNIR,
+			EmissiveMIR,
+		}
+		private static MapProduct mapProduct = MapProduct.ReflectiveVisNIR;
 		private static bool showGlinted = true;
 		private static bool showUnglinted = true;
 		private static bool showOceans;

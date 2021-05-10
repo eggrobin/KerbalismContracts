@@ -9,11 +9,35 @@ namespace KerbalismContracts
 {
 	public class ImagerData : EquipmentData<ModuleImager, ImagerData> { }
 
+	// The region of the spectrum spanned by these bands is one suitable for usual optics;
+	// the same instrument may image in multiple of these bands.
+	// On the shortwave end, extreme ultraviolet & X-rays lie outside of that region; they require
+	// grazing incidence optics or normal incidence multilayer coated optics.
+	// On the longwave end, microwaves lie outside of the region; this is the land of feed horns
+	// and antennæ, and the instruments here are provided by RealAntennas.
+	// The discretization is relatively coarse; bands are distinguished only if their properties
+	// lead to different constraints on mission design.
 	public enum OpticalBand {
-		NearUltraviolet,
-		Visible,
-		NearInfrared,
+		// Near, middle, and far ultraviolet.
+		// The Earth’s atmosphere is opaque.
+		// For remote sensing, largely limited to the study of the upper atmosphere.
+		Ultraviolet,
+		// Visible and near infrared.
+		// The Earth’s atmosphere is somewhat transparent.
+		// For remote sensing, this is mostly reflective, or situationally emissive (lights, fires).
+		// For astronomy, thermal considerations are limited to the detector, as opposed to requiring
+		// the instrument to be in a cool place.
+		VisNIR,
+		// Middle infrared.
+		// The Earth’s atmosphere is somewhat transparent.
+		// For remote sensing, this is (emissive) thermal imaging.
+		// For astronomy, whole-instrument thermal considerations start to matter, so that the
+		// atmosphere itself prohibits ground-based astronomy.
 		MidInfrared,
+		// Far infrared.
+		// The Earth’s atmosphere is opaque.
+		// For astronomy, cooling is critical; this is where HSO lives, or where the longer wavelengths
+		// of SST lie.
 		FarInfrared,
 	}
 
@@ -21,9 +45,8 @@ namespace KerbalismContracts
 		public static double RepresentativeWavelength(this OpticalBand band) {
 			return band switch
 			{
-				OpticalBand.NearUltraviolet =>  66e-9,  // Photometric U band.
-				OpticalBand.Visible => 555e-9,  // 540 THz Green.
-				OpticalBand.NearInfrared => 1e-6,
+				OpticalBand.Ultraviolet =>  200e-9,
+				OpticalBand.VisNIR => 555e-9,  // 540 THz Green.
 				OpticalBand.MidInfrared => 10e-6,
 				OpticalBand.FarInfrared => 100e-6,
 				_ => throw new ArgumentException($"Unexpected optical band {band}"),
