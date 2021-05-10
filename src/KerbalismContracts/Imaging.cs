@@ -1,10 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace KerbalismContracts
 {
@@ -30,13 +26,34 @@ namespace KerbalismContracts
 				range = surfaceToSatellite.magnitude;
 				cosZenithalAngle =
 					Vector3d.Dot(surfaceToSatellite, surfacePoint.vertical) / range;
+				absSinSwathAngle = 0;
 			}
+
+			public SurfaceSatelliteGeometry(
+				Vector3d bodyCentredVesselPosition,
+				Vector3d swathNormal,
+				SurfacePoint surfacePoint)
+			{
+				Vector3d surfaceToSatellite =
+					bodyCentredVesselPosition - surfacePoint.bodyCentredSurfacePosition;
+				range = surfaceToSatellite.magnitude;
+				cosZenithalAngle =
+					Vector3d.Dot(surfaceToSatellite, surfacePoint.vertical) / range;
+				// The cosine of the angle between the satellite-surface ray and the swath normal
+				// is the sine of the angle between that ray and the swath plane.
+				absSinSwathAngle = Math.Abs(Vector3d.Dot(surfaceToSatellite, swathNormal) / range);
+			}
+
 			public double range;
 			// The cosine of the satellite-surface-vertical angle.
 			public double cosZenithalAngle;
-			public bool Visible => cosZenithalAngle > 0;
+			// The absolute value of the sine of the angle between the satellite-surface ray
+			// and the swath plane.
+			public double absSinSwathAngle;
+			public bool Visible => cosZenithalAngle > 0 && absSinSwathAngle < sin5degrees;
 		}
 
+		public const double sin5degrees = 0.087155742747658174;
 		public const double cos15degrees = 0.96592582628906829;
 		public const double cos75degrees = 0.25881904510252076;
 		public const double cos105degrees = -cos75degrees;
@@ -85,6 +102,23 @@ namespace KerbalismContracts
 				Vector3d satelliteDirection = surfaceToSatellite / surfaceSatelliteGeometry.range;
 				surfaceSatelliteGeometry.cosZenithalAngle =
 					Vector3d.Dot(satelliteDirection, surfacePoint.vertical);
+				surfaceSatelliteGeometry.absSinSwathAngle = 0;
+				cosGlintAngle = Vector3d.Dot(satelliteDirection, sunSurfaceGeometry.reflectedRay);
+			}
+			public SunSurfaceSatelliteGeometry(
+				Vector3d bodyCentredVesselPosition,
+				Vector3d swathNormal,
+				SurfacePoint surfacePoint,
+				SunSurfaceGeometry sunSurfaceGeometry)
+			{
+				Vector3d surfaceToSatellite =
+					bodyCentredVesselPosition - surfacePoint.bodyCentredSurfacePosition;
+				surfaceSatelliteGeometry.range = surfaceToSatellite.magnitude;
+				Vector3d satelliteDirection = surfaceToSatellite / surfaceSatelliteGeometry.range;
+				surfaceSatelliteGeometry.cosZenithalAngle =
+					Vector3d.Dot(satelliteDirection, surfacePoint.vertical);
+				surfaceSatelliteGeometry.absSinSwathAngle =
+					Math.Abs(Vector3d.Dot(satelliteDirection, swathNormal));
 				cosGlintAngle = Vector3d.Dot(satelliteDirection, sunSurfaceGeometry.reflectedRay);
 			}
 			public SurfaceSatelliteGeometry surfaceSatelliteGeometry;
@@ -116,6 +150,7 @@ namespace KerbalismContracts
 			{
 				reset = false;
 				kerbin_imaging = null;
+				lastUpdateUT = null;
 				window.width = 0;
 				window.height = 0;
 				return;
@@ -237,25 +272,35 @@ namespace KerbalismContracts
 					Vessel platform = FlightGlobals.FindVessel(imager.Key);
 					ImagerProperties[] instruments = imager.Value;
 					Vector3d vesselFromKerbinInWorld;
+					Vector3d kerbinCentredVesselVelocityInWorld;
 					if (platform.orbit.referenceBody == kerbin)
 					{
 						var vesselFromKerbinInAlice = platform.orbit.getRelativePositionAtUT(t);
+						var kerbinCentredVesselVelocityInAlice = platform.orbit.getOrbitalVelocityAtUT(t);
 						vesselFromKerbinInWorld = vesselFromKerbinInAlice.xzy;
+						kerbinCentredVesselVelocityInWorld = kerbinCentredVesselVelocityInAlice.xzy;
 					}
 					else
 					{
 						Vector3d vesselFromSunInAlice = Vector3d.zero;
 						Vector3d kerbinFromSunInAlice = Vector3d.zero;
+						Vector3d heliocentricVesselVelocityInAlice = Vector3d.zero;
+						Vector3d heliocentricKerbinVelocityInAlice = Vector3d.zero;
 						for (var orbit = platform.orbit; orbit != null; orbit = orbit.referenceBody?.orbit)
 						{
 							vesselFromSunInAlice += orbit.getRelativePositionAtUT(t);
+							heliocentricVesselVelocityInAlice += orbit.getOrbitalVelocityAtUT(t);
 						}
 						for (var orbit = kerbin.orbit; orbit != null; orbit = orbit.referenceBody?.orbit)
 						{
 							kerbinFromSunInAlice += orbit.getRelativePositionAtUT(t);
+							heliocentricKerbinVelocityInAlice += orbit.getOrbitalVelocityAtUT(t);
 						}
 						vesselFromKerbinInWorld = (vesselFromSunInAlice - kerbinFromSunInAlice).xzy;
+						kerbinCentredVesselVelocityInWorld =
+							(heliocentricVesselVelocityInAlice - heliocentricKerbinVelocityInAlice).xzy;
 					}
+					Vector3d swathNormal = world_to_kerbin * kerbinCentredVesselVelocityInWorld.normalized;
 					Vector3d vesselInSurfaceFrame = world_to_kerbin * vesselFromKerbinInWorld;
 					double xVessel = (0.5 + kerbin.GetLongitude(
 						kerbin.position + current_kerbin_to_world * world_to_kerbin * vesselFromKerbinInWorld) / 360) % 1;
@@ -272,10 +317,16 @@ namespace KerbalismContracts
 						}
 						for (int x = parallel.x_begin; x != parallel.x_end; ++x)
 						{
-							SunSurfaceSatelliteGeometry geometry = new SunSurfaceSatelliteGeometry(
-								vesselInSurfaceFrame,
-								parallel.surface[x],
-								parallel.sun[x]);
+							SunSurfaceSatelliteGeometry geometry = pushbroom
+								? new SunSurfaceSatelliteGeometry(
+									vesselInSurfaceFrame,
+									swathNormal,
+									parallel.surface[x],
+									parallel.sun[x])
+								: new SunSurfaceSatelliteGeometry(
+									vesselInSurfaceFrame,
+									parallel.surface[x],
+									parallel.sun[x]);
 							if (geometry.surfaceSatelliteGeometry.Visible)
 							{
 								foreach (var instrument in instruments)
@@ -606,7 +657,7 @@ namespace KerbalismContracts
 			switch (mapType)
 			{
 				case MapType.Freshness:
-					result = $@"{mapProduct} at {
+					result = $@"Freshness at a resolution of {
 						(chosenResolution > 1000 ? $"{chosenResolution / 1000:N0} km" : $"{chosenResolution:N0} m")}";
 					for (int i = 0; i < freshnessThresholds.Length; ++i)
 					{
@@ -616,7 +667,7 @@ namespace KerbalismContracts
 					}
 					break;
 				case MapType.Resolution:
-					result = $@"{mapProduct} at {
+					result = $@"Resolution at a freshness of {
 						(chosenFreshness > 3600 ? $"{chosenFreshness / 3600:N0} h" : $" current time")}";
 					for (int i = 0; i < resolutionThresholds.Length; ++i)
 					{
@@ -636,6 +687,7 @@ namespace KerbalismContracts
 				UnityEngine.GUILayout.TextArea($"{activeImagers.Count} active imagers");
 				UnityEngine.GUILayout.TextArea($"Update: {timeSpentInUpdate.TotalMilliseconds} ms");
 				solarParallax = UnityEngine.GUILayout.Toggle(solarParallax, "Solar parallax (slow, likely pointless)");
+				pushbroom = UnityEngine.GUILayout.Toggle(pushbroom, "Pushbroom imagers");
 				reset |= UnityEngine.GUILayout.Button("Reset");
 				small = UnityEngine.GUILayout.Toggle(small, "Small map (effective on reset)");
 				UnityEngine.GUILayout.Label("—————");
@@ -704,7 +756,7 @@ namespace KerbalismContracts
 				{
 					if (UnityEngine.GUILayout.Button("Urbanization/Light pollution"))
 					{
-						mapProduct = MapProduct.EmissiveMIR;
+						mapProduct = MapProduct.NightVisNIR;
 						showSun = true;
 						chosenResolutionIndex = resolutionThresholds.IndexOf(1e3);
 						chosenFreshnessIndex = freshnessThresholds.IndexOf(48 * 3600);
@@ -791,8 +843,9 @@ namespace KerbalismContracts
 		private double chosenResolution => resolutionThresholds[chosenResolutionIndex];
 		private double[] resolutionCoverage = new double[5];
 		private static MapType mapType;
-
+		
 		private static bool showSun = true;
+		private static bool pushbroom = true;
 
 		private UnityEngine.Quaternion? lastKerbinRotation;
 		private TimeSpan timeSpentInUpdate;
