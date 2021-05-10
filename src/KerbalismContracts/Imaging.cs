@@ -227,7 +227,7 @@ namespace KerbalismContracts
 				}
 			}
 			var imagers = activeImagers.ToArray();
-			double Δt = 60;
+			double Δt = 30;
 			if (lastUpdateUT == null || kerbin.scaledBody.transform.rotation == null)
 			{
 				lastUpdateUT = Planetarium.GetUniversalTime();
