@@ -306,81 +306,32 @@ namespace KerbalismContracts
 					}
 					Vector3d swathNormal = world_to_kerbin * kerbinCentredVesselVelocityInWorld.normalized;
 					Vector3d vesselInSurfaceFrame = world_to_kerbin * vesselFromKerbinInWorld;
-					double xVessel = (0.5 + kerbin.GetLongitude(
-						kerbin.position + current_kerbin_to_world * world_to_kerbin * vesselFromKerbinInWorld) / 360) % 1;
-					for (int y = 0; y != y_size; ++y)
+					UnityEngine.Vector2d subsatellitePoint = kerbin.GetLatitudeAndLongitude(
+						kerbin.position + current_kerbin_to_world * world_to_kerbin * vesselFromKerbinInWorld);
+					double latitude = subsatellitePoint.x;
+					double longitude = subsatellitePoint.y;
+					double xVessel = (0.5 + longitude / 360) % 1;
+					double yVessel = (0.5 + latitude / 180) % 1;
+					for (int y = (int)(yVessel * y_size); y < y_size; ++y)
 					{
 						var parallel = kerbin_imaging[y];
-						var closestPoint = parallel.surface[
-							(int)(parallel.x_begin + xVessel * (parallel.x_end - parallel.x_begin))];
-						if (!IsVisible(
-							vesselInSurfaceFrame,
-							new SurfacePoint(closestPoint.vertical * kerbin_radius)))
+						UpdateParallel(
+							t, parallel, vesselInSurfaceFrame, swathNormal, instruments,
+							out bool parallelVisibleAtRelevantResolution);
+						if (!parallelVisibleAtRelevantResolution)
 						{
-							continue;
+							break;
 						}
-						for (int x = parallel.x_begin; x != parallel.x_end; ++x)
+					}
+					for (int y = (int)(yVessel * y_size) - 1; y >= 0; --y)
+					{
+						var parallel = kerbin_imaging[y];
+						UpdateParallel(
+							t, parallel, vesselInSurfaceFrame, swathNormal, instruments,
+							out bool parallelVisibleAtRelevantResolution);
+						if (!parallelVisibleAtRelevantResolution)
 						{
-							SunSurfaceSatelliteGeometry geometry = pushbroom
-								? new SunSurfaceSatelliteGeometry(
-									vesselInSurfaceFrame,
-									swathNormal,
-									parallel.surface[x],
-									parallel.sun[x])
-								: new SunSurfaceSatelliteGeometry(
-									vesselInSurfaceFrame,
-									parallel.surface[x],
-									parallel.sun[x]);
-							if (geometry.surfaceSatelliteGeometry.Visible)
-							{
-								foreach (var instrument in instruments)
-								{
-									bool sunlit = parallel.sun[x].cosSolarZenithAngle > cos75degrees;
-									bool night = parallel.sun[x].cosSolarZenithAngle < cos105degrees;
-									if (instrument.band == OpticalBand.VisNIR && !sunlit && !night)
-									{
-										continue;
-									}
-									double resolution = instrument.HorizontalResolution(geometry.surfaceSatelliteGeometry);
-									for (int i = 0; i < resolutionThresholds.Length; ++i)
-									{
-										if (instrument.HorizontalResolution(geometry.surfaceSatelliteGeometry) <
-											resolutionThresholds[i])
-										{
-											for (; i < resolutionThresholds.Length; ++i)
-											{
-												switch (instrument.band)
-												{
-													case OpticalBand.MidInfrared:
-														parallel.midInfrared[x].lastImagingTime[i] =
-															Math.Max(parallel.midInfrared[x].lastImagingTime[i], t);
-														break;
-													case OpticalBand.VisNIR:
-														if (sunlit)
-														{
-															if (geometry.cosGlintAngle > cos15degrees)
-															{
-																parallel.glintedReflectiveVisNIR[x].lastImagingTime[i] =
-																	Math.Max(parallel.glintedReflectiveVisNIR[x].lastImagingTime[i], t);
-															}
-															else
-															{
-																parallel.unglintedReflectiveVisNIR[x].lastImagingTime[i] =
-																	Math.Max(parallel.unglintedReflectiveVisNIR[x].lastImagingTime[i], t);
-															}
-														}
-														else if (night)
-														{
-															parallel.nightVisNIR[x].lastImagingTime[i] =
-																Math.Max(parallel.nightVisNIR[x].lastImagingTime[i], t);
-														}
-														break;
-												}
-											}
-										}
-									}
-								}
-							}
+							break;
 						}
 					}
 				}
@@ -392,6 +343,81 @@ namespace KerbalismContracts
 
 			minimap.Apply(updateMipmaps: false);
 			timeSpentInUpdate = DateTime.UtcNow - start;
+		}
+
+		private void UpdateParallel(
+			double t,
+			ImagingParallel parallel,
+			Vector3d vesselInSurfaceFrame,
+			Vector3d swathNormal,
+			ImagerProperties[] instruments,
+			out bool parallelVisibleAtRelevantResolution)
+		{
+			parallelVisibleAtRelevantResolution = false;
+			for (int x = parallel.x_begin; x != parallel.x_end; ++x)
+			{
+				SunSurfaceSatelliteGeometry geometry = pushbroom
+					? new SunSurfaceSatelliteGeometry(
+						vesselInSurfaceFrame,
+						swathNormal,
+						parallel.surface[x],
+						parallel.sun[x])
+					: new SunSurfaceSatelliteGeometry(
+						vesselInSurfaceFrame,
+						parallel.surface[x],
+						parallel.sun[x]);
+				if (geometry.surfaceSatelliteGeometry.Visible)
+				{
+					foreach (var instrument in instruments)
+					{
+						bool sunlit = parallel.sun[x].cosSolarZenithAngle > cos75degrees;
+						bool night = parallel.sun[x].cosSolarZenithAngle < cos105degrees;
+						if (instrument.band == OpticalBand.VisNIR && !sunlit && !night)
+						{
+							continue;
+						}
+						double resolution = instrument.HorizontalResolution(geometry.surfaceSatelliteGeometry);
+						for (int i = 0; i < resolutionThresholds.Length; ++i)
+						{
+							if (instrument.HorizontalResolution(geometry.surfaceSatelliteGeometry) <
+								resolutionThresholds[i])
+							{
+								parallelVisibleAtRelevantResolution = true;
+								for (; i < resolutionThresholds.Length; ++i)
+								{
+									switch (instrument.band)
+									{
+										case OpticalBand.MidInfrared:
+											parallel.midInfrared[x].lastImagingTime[i] =
+												Math.Max(parallel.midInfrared[x].lastImagingTime[i], t);
+											break;
+										case OpticalBand.VisNIR:
+											if (sunlit)
+											{
+												if (geometry.cosGlintAngle > cos15degrees)
+												{
+													parallel.glintedReflectiveVisNIR[x].lastImagingTime[i] =
+														Math.Max(parallel.glintedReflectiveVisNIR[x].lastImagingTime[i], t);
+												}
+												else
+												{
+													parallel.unglintedReflectiveVisNIR[x].lastImagingTime[i] =
+														Math.Max(parallel.unglintedReflectiveVisNIR[x].lastImagingTime[i], t);
+												}
+											}
+											else if (night)
+											{
+												parallel.nightVisNIR[x].lastImagingTime[i] =
+													Math.Max(parallel.nightVisNIR[x].lastImagingTime[i], t);
+											}
+											break;
+									}
+								}
+							}
+						}
+					}
+				}
+			}
 		}
 
 		public void RefreshMap()
@@ -521,7 +547,7 @@ namespace KerbalismContracts
 							}
 						}
 						if (showLand && showOceans && map.ocean && (
-							(x - 1> parallel.x_begin && !parallel.map[x - 1].ocean) ||
+							(x - 1 > parallel.x_begin && !parallel.map[x - 1].ocean) ||
 							(x + 1 < parallel.x_end && !parallel.map[x + 1].ocean)))
 						{
 							pixels[pixel] = sea;
@@ -536,7 +562,8 @@ namespace KerbalismContracts
 							c.g /= 2;
 							c.b /= 2;
 							pixels[pixel] = c;
-						} else if (parallel.sun[x].cosSolarZenithAngle < cos75degrees)
+						}
+						else if (parallel.sun[x].cosSolarZenithAngle < cos75degrees)
 						{
 							var c = pixels[pixel];
 							c.r = (byte)(2 * c.r / 3);
@@ -818,7 +845,8 @@ namespace KerbalismContracts
 		private static bool small = false;
 		private static bool solarParallax;
 
-		private enum MapProduct {
+		private enum MapProduct
+		{
 			ReflectiveVisNIR,
 			NightVisNIR,
 			EmissiveMIR,
@@ -849,7 +877,7 @@ namespace KerbalismContracts
 		private double chosenResolution => resolutionThresholds[chosenResolutionIndex];
 		private double[] resolutionCoverage = new double[5];
 		private static MapType mapType;
-		
+
 		private static bool showSun = true;
 		private static bool pushbroom = true;
 		private static bool pause = false;
