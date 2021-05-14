@@ -155,6 +155,10 @@ namespace KerbalismContracts
 				window.height = 0;
 				return;
 			}
+			if (pause)
+			{
+				return;
+			}
 			if (kerbin_imaging == null)
 			{
 				UnityEngine.Debug.LogWarning("Rebuilding map...");
@@ -690,6 +694,8 @@ namespace KerbalismContracts
 				pushbroom = UnityEngine.GUILayout.Toggle(pushbroom, "Pushbroom imagers");
 				reset |= UnityEngine.GUILayout.Button("Reset");
 				small = UnityEngine.GUILayout.Toggle(small, "Small map (effective on reset)");
+				pause = UnityEngine.GUILayout.Toggle(pause, "Pause imaging analysis");
+				reset |= pause;
 				UnityEngine.GUILayout.Label("—————");
 				UnityEngine.GUILayout.TextArea(CoverageSummary());
 				DrawMapTypeSelector();
@@ -846,6 +852,7 @@ namespace KerbalismContracts
 		
 		private static bool showSun = true;
 		private static bool pushbroom = true;
+		private static bool pause = false;
 
 		private UnityEngine.Quaternion? lastKerbinRotation;
 		private TimeSpan timeSpentInUpdate;
