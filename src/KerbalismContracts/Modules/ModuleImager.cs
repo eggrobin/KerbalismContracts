@@ -7,7 +7,21 @@ using System.Threading.Tasks;
 
 namespace KerbalismContracts
 {
-	public class ImagerData : EquipmentData<ModuleImager, ImagerData> { }
+	public class ImagerData : EquipmentData<ModuleImager, ImagerData> {
+		public bool isPushbroom;
+
+		public override void OnLoad(ConfigNode node)
+		{
+			base.OnLoad(node);
+			isPushbroom = Lib.ConfigValue(node, "isPushbroom", true);
+		}
+
+		public override void OnSave(ConfigNode node)
+		{
+			base.OnSave(node);
+			node.AddValue("isPushBroom", isPushbroom);
+		}
+	}
 
 	// The region of the spectrum spanned by these bands is one suitable for usual optics;
 	// the same instrument may image in multiple of these bands.
@@ -54,11 +68,12 @@ namespace KerbalismContracts
 		}
 	}
 
-	public class ImagerProperties {
+	public class ImagingProduct {
 
 		public double fieldOfViewInRadians;
 		public OpticalBand band;
 		public double aperture;
+		public bool pushbroom;
 
 		// The best angular resolution that this imager can achieve.
 		// For dim targets, noise will be the limiting factor instead; only use
@@ -109,17 +124,31 @@ namespace KerbalismContracts
 			Bands = bands;
 		}
 
-		public IEnumerable<ImagerProperties> properties =>
-			from band in Bands select new ImagerProperties{
+		[KSPEvent(active = true, guiActive = true, guiActiveEditor = true, requireFullControl = true, guiName = "_")]
+		public void TogglePushbroom()
+		{
+			moduleData.isPushbroom = !moduleData.isPushbroom;
+		}
+
+		public override void Update()
+		{
+			base.Update();
+			Events["TogglePushbroom"].guiName = moduleData.isPushbroom ? "1D scan (pushbroom)" : "2D scan";
+		}
+
+		private IEnumerable<ImagingProduct> Products(ImagerData data)
+		{
+			return from band in Bands select new ImagingProduct{
 				fieldOfViewInRadians=fieldOfViewInRadians,
-				band=band, aperture=aperture};
+				band=band, aperture=aperture, pushbroom=data.isPushbroom};
+		}
 
 		protected override void EquipmentUpdate(ImagerData ed, Vessel vessel)
 		{
 			background_vessel = vessel;
 			if (ed.state == EquipmentState.nominal)
 			{
-				KerbalismContracts.Imaging.RegisterImager(this);
+				KerbalismContracts.Imaging.RegisterImager(this, Products(ed));
 			}
 			else
 			{

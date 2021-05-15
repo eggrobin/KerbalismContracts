@@ -125,9 +125,9 @@ namespace KerbalismContracts
 			public double cosGlintAngle;
 		}
 
-		public void RegisterImager(ModuleImager imager)
+		public void RegisterImager(ModuleImager imager, IEnumerable<ImagingProduct> products)
 		{
-			activeImagers[imager.platform.id] = imager.properties.ToArray();
+			activeImagers[imager.platform.id] = products.ToArray();
 		}
 
 		public void UnregisterImager(ModuleImager imager)
@@ -274,7 +274,7 @@ namespace KerbalismContracts
 				foreach (var imager in imagers)
 				{
 					Vessel platform = FlightGlobals.FindVessel(imager.Key);
-					ImagerProperties[] instruments = imager.Value;
+					ImagingProduct[] products = imager.Value;
 					Vector3d vesselFromKerbinInWorld;
 					Vector3d kerbinCentredVesselVelocityInWorld;
 					if (platform.orbit.referenceBody == kerbin)
@@ -316,7 +316,7 @@ namespace KerbalismContracts
 					{
 						var parallel = kerbin_imaging[y];
 						UpdateParallel(
-							t, parallel, vesselInSurfaceFrame, swathNormal, instruments,
+							t, parallel, vesselInSurfaceFrame, swathNormal, products,
 							out bool parallelVisibleAtRelevantResolution);
 						if (!parallelVisibleAtRelevantResolution)
 						{
@@ -327,7 +327,7 @@ namespace KerbalismContracts
 					{
 						var parallel = kerbin_imaging[y];
 						UpdateParallel(
-							t, parallel, vesselInSurfaceFrame, swathNormal, instruments,
+							t, parallel, vesselInSurfaceFrame, swathNormal, products,
 							out bool parallelVisibleAtRelevantResolution);
 						if (!parallelVisibleAtRelevantResolution)
 						{
@@ -350,13 +350,13 @@ namespace KerbalismContracts
 			ImagingParallel parallel,
 			Vector3d vesselInSurfaceFrame,
 			Vector3d swathNormal,
-			ImagerProperties[] instruments,
+			ImagingProduct[] products,
 			out bool parallelVisibleAtRelevantResolution)
 		{
 			parallelVisibleAtRelevantResolution = false;
 			for (int x = parallel.x_begin; x != parallel.x_end; ++x)
 			{
-				SunSurfaceSatelliteGeometry geometry = pushbroom
+				SunSurfaceSatelliteGeometry geometry = products[0].pushbroom
 					? new SunSurfaceSatelliteGeometry(
 						vesselInSurfaceFrame,
 						swathNormal,
@@ -368,24 +368,24 @@ namespace KerbalismContracts
 						parallel.sun[x]);
 				if (geometry.surfaceSatelliteGeometry.Visible)
 				{
-					foreach (var instrument in instruments)
+					foreach (var product in products)
 					{
 						bool sunlit = parallel.sun[x].cosSolarZenithAngle > cos75degrees;
 						bool night = parallel.sun[x].cosSolarZenithAngle < cos105degrees;
-						if (instrument.band == OpticalBand.VisNIR && !sunlit && !night)
+						if (product.band == OpticalBand.VisNIR && !sunlit && !night)
 						{
 							continue;
 						}
-						double resolution = instrument.HorizontalResolution(geometry.surfaceSatelliteGeometry);
+						double resolution = product.HorizontalResolution(geometry.surfaceSatelliteGeometry);
 						for (int i = 0; i < resolutionThresholds.Length; ++i)
 						{
-							if (instrument.HorizontalResolution(geometry.surfaceSatelliteGeometry) <
+							if (product.HorizontalResolution(geometry.surfaceSatelliteGeometry) <
 								resolutionThresholds[i])
 							{
 								parallelVisibleAtRelevantResolution = true;
 								for (; i < resolutionThresholds.Length; ++i)
 								{
-									switch (instrument.band)
+									switch (product.band)
 									{
 										case OpticalBand.MidInfrared:
 											parallel.midInfrared[x].lastImagingTime[i] =
@@ -718,7 +718,6 @@ namespace KerbalismContracts
 				UnityEngine.GUILayout.TextArea($"{activeImagers.Count} active imagers");
 				UnityEngine.GUILayout.TextArea($"Update: {timeSpentInUpdate.TotalMilliseconds} ms");
 				solarParallax = UnityEngine.GUILayout.Toggle(solarParallax, "Solar parallax (slow, likely pointless)");
-				pushbroom = UnityEngine.GUILayout.Toggle(pushbroom, "Pushbroom imagers");
 				reset |= UnityEngine.GUILayout.Button("Reset");
 				small = UnityEngine.GUILayout.Toggle(small, "Small map (effective on reset)");
 				pause = UnityEngine.GUILayout.Toggle(pause, "Pause imaging analysis");
@@ -879,13 +878,12 @@ namespace KerbalismContracts
 		private static MapType mapType;
 
 		private static bool showSun = true;
-		private static bool pushbroom = true;
 		private static bool pause = false;
 
 		private UnityEngine.Quaternion? lastKerbinRotation;
 		private TimeSpan timeSpentInUpdate;
 		private TimeSpan timeSpentInTextureUpdate;
 		private TimeSpan timeSpentInIllumination;
-		private readonly Dictionary<Guid, ImagerProperties[]> activeImagers = new Dictionary<Guid, ImagerProperties[]>();
+		private readonly Dictionary<Guid, ImagingProduct[]> activeImagers = new Dictionary<Guid, ImagingProduct[]>();
 	}
 }
