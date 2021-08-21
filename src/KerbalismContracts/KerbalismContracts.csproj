@@ -83,6 +83,9 @@
       <Private>False</Private>
       <IncludeInPackage>false</IncludeInPackage>
     </Reference>
+    <Reference Include="UnityEngine.PhysicsModule">
+      <HintPath>..\..\..\KSP_win64 1.8.1\KSP_x64_Data\Managed\UnityEngine.PhysicsModule.dll</HintPath>
+    </Reference>
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Imaging.cs" />

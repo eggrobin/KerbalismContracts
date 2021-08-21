@@ -304,7 +304,17 @@ namespace KerbalismContracts
 						kerbinCentredVesselVelocityInWorld =
 							(heliocentricVesselVelocityInAlice - heliocentricKerbinVelocityInAlice).xzy;
 					}
-					Vector3d swathNormal = world_to_kerbin * kerbinCentredVesselVelocityInWorld.normalized;
+					Vector3d swathNormal;
+					if (platform.loaded) {
+						// The rotation transforms from part coordinates to
+						// world coordinates.
+						// TODO(egg): that products[0] is a hack.
+						swathNormal = world_to_kerbin *
+								(products[0].part.rb.rotation * Vector3d.up);
+					} else {
+						// TODO(egg): Fetch from Principia if available.
+						swathNormal = world_to_kerbin * kerbinCentredVesselVelocityInWorld.normalized;
+					}
 					Vector3d vesselInSurfaceFrame = world_to_kerbin * vesselFromKerbinInWorld;
 					UnityEngine.Vector2d subsatellitePoint = kerbin.GetLatitudeAndLongitude(
 						kerbin.position + current_kerbin_to_world * world_to_kerbin * vesselFromKerbinInWorld);

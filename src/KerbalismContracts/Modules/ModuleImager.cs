@@ -70,6 +70,7 @@ namespace KerbalismContracts
 
 	public class ImagingProduct {
 
+		public Part part;
 		public double fieldOfViewInRadians;
 		public OpticalBand band;
 		public double aperture;
@@ -103,7 +104,7 @@ namespace KerbalismContracts
 		[KSPField] public double fieldOfViewInRadians;
 		[KSPField] public string opticalBands;
 		[KSPField] public double aperture;
-
+		
 		public Vessel platform => vessel ?? background_vessel;
 		private Vessel background_vessel;
 		public IEnumerable<OpticalBand> Bands { get; private set; }
@@ -139,6 +140,7 @@ namespace KerbalismContracts
 		private IEnumerable<ImagingProduct> Products(ImagerData data)
 		{
 			return from band in Bands select new ImagingProduct{
+				part=part,
 				fieldOfViewInRadians=fieldOfViewInRadians,
 				band=band, aperture=aperture, pushbroom=data.isPushbroom};
 		}
