@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using RealAntennas;
 using RealAntennas.Network;
 using RealAntennas.MapUI;
+using RealAntennas.Targeting;
 
 namespace skopos
 {
@@ -23,6 +24,10 @@ namespace skopos
 		private void FixedUpdate()
 		{
 			var network = CommNet.CommNetNetwork.Instance.CommNet as RACommNetwork;
+			if (network == null) {
+				UnityEngine.Debug.LogError("No RA comm network");
+				return;
+			}
 			if (ground_segment_ == null)
 			{
 				UnityEngine.Debug.Log("Defining ground segment");
@@ -52,6 +57,7 @@ namespace skopos
 			}
 			if (ground_station_nodes_ == null && MapView.fetch != null)
 			{
+				UnityEngine.Debug.Log("Creating ground nodes");
 				ground_station_nodes_ = new List<GroundStationSiteNode>();
 				foreach (var station in ground_segment_)
 				{
@@ -66,6 +72,7 @@ namespace skopos
 						100f));
 					siteNode.wayPoint.node.OnUpdateVisible += station.OnUpdateVisible;
 				}
+				UnityEngine.Debug.Log("Created ground nodes");
 			}
 			min_rate_ = double.PositiveInfinity;
 			for (int tx = 0; tx < ground_segment_.Count; ++tx)
@@ -95,6 +102,9 @@ namespace skopos
 					rate_matrix_[tx, rx] = rate;
 					latency_matrix_[tx, rx] = length / 299792458;
 					min_rate_ = Math.Min(min_rate_, rate);
+					UnityEngine.Debug.Log(
+						$@"{RATools.PrettyPrintDataRate(rate_matrix_[tx, rx])}, {
+							latency_matrix_[tx, rx] * 1000} ms latency");
 				}
 			}
 		}
@@ -151,7 +161,42 @@ namespace skopos
 				}
 				for (int tx = 0; tx < ground_segment_.Count; ++tx)
 				{
-					UnityEngine.GUILayout.Label($"{tx + 1}: {ground_segment_[tx].nodeName}");
+					var antenna = ground_segment_[tx].Comm.RAAntennaList[0];
+					UnityEngine.GUILayout.Label(
+						$@"{tx + 1}: {ground_segment_[tx].nodeName}; CanTarget={
+							antenna.CanTarget}, Target={antenna.Target}");
+				}
+				if (UnityEngine.GUILayout.Button("Target active vessel")) {
+					for (int tx = 0; tx < ground_segment_.Count; ++tx)
+					{
+						var config = new ConfigNode(AntennaTarget.nodeName);
+						config.AddValue("name", $"{AntennaTarget.TargetMode.Vessel}");
+						config.AddValue("vesselId", FlightGlobals.ActiveVessel.id);
+						var antenna = ground_segment_[tx].Comm.RAAntennaList[0];
+						antenna.Target = AntennaTarget.LoadFromConfig(config, antenna);
+					}
+				}
+				if (UnityEngine.GUILayout.Button("Target current alt./az.")) {
+					for (int tx = 0; tx < ground_segment_.Count; ++tx)
+					{
+						var q = FlightGlobals.ActiveVessel.GetWorldPos3D();
+						ground_segment_[tx].Comm.ParentBody.GetLatLonAlt(
+							q, out double lat, out double lon, out double alt);
+						var config = new ConfigNode(AntennaTarget.nodeName);
+						config.AddValue("name", $"{AntennaTarget.TargetMode.BodyLatLonAlt}");
+						config.AddValue("bodyName", Planetarium.fetch.Home.name);
+						config.AddValue("latLonAlt", new Vector3d(lat, lon, alt));
+						var antenna = ground_segment_[tx].Comm.RAAntennaList[0];
+						antenna.Target = AntennaTarget.LoadFromConfig(config, antenna);
+					}
+
+				}
+				if (UnityEngine.GUILayout.Button("Clear target")) {
+					for (int tx = 0; tx < ground_segment_.Count; ++tx)
+					{
+						var antenna = ground_segment_[tx].Comm.RAAntennaList[0];
+						antenna.Target = null;
+					}
 				}
 			}
 			UnityEngine.GUI.DragWindow();
