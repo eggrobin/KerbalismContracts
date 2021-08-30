@@ -24,7 +24,8 @@ namespace skopos
 		private void FixedUpdate()
 		{
 			var network = CommNet.CommNetNetwork.Instance.CommNet as RACommNetwork;
-			if (network == null) {
+			if (network == null)
+			{
 				UnityEngine.Debug.LogError("No RA comm network");
 				return;
 			}
@@ -39,6 +40,7 @@ namespace skopos
 				var body = FlightGlobals.GetBodyByName(ground_segment_node.GetValue("body"));
 				UnityEngine.Debug.Log($"Body is {body.name}");
 				ground_segment_ = new List<RACommNetHome>();
+				space_segment_ = new Dictionary<Vessel, double>();
 				UnityEngine.Debug.Log($"{ground_segment_node.GetNodes("station").Length} ground stations");
 				foreach (ConfigNode node in ground_segment_node.GetNodes("station"))
 				{
@@ -75,6 +77,7 @@ namespace skopos
 				UnityEngine.Debug.Log("Created ground nodes");
 			}
 			min_rate_ = double.PositiveInfinity;
+			active_links_.Clear();
 			for (int tx = 0; tx < ground_segment_.Count; ++tx)
 			{
 				ground_segment_[tx].Comm.isHome = false;
@@ -91,9 +94,14 @@ namespace skopos
 					double length = 0;
 					foreach (var l in path)
 					{
+						active_links_.Add(l);
 						RACommLink link = l.start[l.end] as RACommLink;
 						rate = Math.Min(rate, link.FwdDataRate);
 						length += (l.a.position - l.b.position).magnitude;
+						if ((l.end as RACommNode).ParentVessel is Vessel vessel)
+						{
+							space_segment_[vessel] = Planetarium.GetUniversalTime();
+						}
 					}
 					if (path.IsEmpty())
 					{
@@ -166,7 +174,8 @@ namespace skopos
 						$@"{tx + 1}: {ground_segment_[tx].nodeName}; CanTarget={
 							antenna.CanTarget}, Target={antenna.Target}");
 				}
-				if (UnityEngine.GUILayout.Button("Target active vessel")) {
+				if (UnityEngine.GUILayout.Button("Target active vessel"))
+				{
 					for (int tx = 0; tx < ground_segment_.Count; ++tx)
 					{
 						var config = new ConfigNode(AntennaTarget.nodeName);
@@ -176,7 +185,8 @@ namespace skopos
 						antenna.Target = AntennaTarget.LoadFromConfig(config, antenna);
 					}
 				}
-				if (UnityEngine.GUILayout.Button("Target current alt./az.")) {
+				if (UnityEngine.GUILayout.Button("Target current alt./az."))
+				{
 					for (int tx = 0; tx < ground_segment_.Count; ++tx)
 					{
 						var q = FlightGlobals.ActiveVessel.GetWorldPos3D();
@@ -189,21 +199,96 @@ namespace skopos
 						var antenna = ground_segment_[tx].Comm.RAAntennaList[0];
 						antenna.Target = AntennaTarget.LoadFromConfig(config, antenna);
 					}
-
 				}
-				if (UnityEngine.GUILayout.Button("Clear target")) {
+				if (UnityEngine.GUILayout.Button("Clear target"))
+				{
 					for (int tx = 0; tx < ground_segment_.Count; ++tx)
 					{
 						var antenna = ground_segment_[tx].Comm.RAAntennaList[0];
 						antenna.Target = null;
 					}
 				}
+				foreach (var vessel_time in space_segment_)
+				{
+					double age_s = Planetarium.GetUniversalTime() - vessel_time.Value;
+					string age = null;
+					if (age_s > 2 * KSPUtil.dateTimeFormatter.Day)
+					{
+						age = $"{age_s / KSPUtil.dateTimeFormatter.Day:F0} days ago";
+					}
+					else if (age_s > 2 * KSPUtil.dateTimeFormatter.Hour)
+					{
+						age = $"{age_s / KSPUtil.dateTimeFormatter.Hour:F0} hours ago";
+					}
+					else if (age_s > 2 * KSPUtil.dateTimeFormatter.Minute)
+					{
+						age = $"{age_s / KSPUtil.dateTimeFormatter.Minute:F0} minutes ago";
+					}
+					else if (age_s > 2)
+					{
+						age = $"{age_s:F0} seconds ago";
+					}
+					using (new UnityEngine.GUILayout.HorizontalScope())
+					{
+						UnityEngine.GUILayout.Label($"{vessel_time.Key.name} {age}");
+						if (age != null &&
+							UnityEngine.GUILayout.Button("Remove", UnityEngine.GUILayout.Width(4 * 20)))
+						{
+							space_segment_.Remove(vessel_time.Key);
+							return;
+						}
+					}
+					show_network_ = UnityEngine.GUILayout.Toggle(show_network_, "Show network");
+					show_active_links_ = UnityEngine.GUILayout.Toggle(show_active_links_, "Active links only");
+				}
 			}
 			UnityEngine.GUI.DragWindow();
 		}
 
+		private void LateUpdate()
+		{
+			if (!show_network_)
+			{
+				return;
+			}
+			var ui = CommNet.CommNetUI.Instance as RACommNetUI;
+			foreach (var station in ground_segment_)
+			{
+				ui.OverrideShownCones.Add(station.Comm);
+			}
+			foreach (var satellite in space_segment_.Keys)
+			{
+				ui.OverrideShownCones.Add(satellite.Connection.Comm as RACommNode);
+			}
+			if (show_active_links_)
+			{
+				ui.OverrideShownLinks.AddRange(active_links_);
+			}
+			else
+			{
+				foreach(var station in ground_segment_)
+				{
+					ui.OverrideShownLinks.AddRange(station.Comm.Values);
+				}
+				foreach(var satellite in space_segment_.Keys)
+				{
+					foreach(var link in satellite.Connection.Comm.Values)
+					{
+						if (space_segment_.ContainsKey((link.b as RACommNode).ParentVessel))
+						{
+							ui.OverrideShownLinks.Add(link);
+						}
+					}
+				}
+			}
+		}
+
 		private List<RACommNetHome> ground_segment_;
+		private Dictionary<Vessel, double> space_segment_;  // Values are the last time on network.
+		private List<CommNet.CommLink> active_links_ = new List<CommNet.CommLink>();
 		private List<GroundStationSiteNode> ground_station_nodes_;
+		private bool show_network_ = true;
+		private bool show_active_links_ = true;
 		private double min_rate_;
 		private double[,] rate_matrix_;
 		private double[,] latency_matrix_;
