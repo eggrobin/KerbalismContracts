@@ -57,6 +57,7 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Network.cs" />
     <Compile Include="Telecom.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
