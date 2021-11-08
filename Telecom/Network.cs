@@ -1,5 +1,6 @@
 ﻿using RealAntennas;
 using RealAntennas.Antenna;
+using RealAntennas.MapUI;
 using RealAntennas.Network;
 using RealAntennas.Precompute;
 using System;
@@ -36,35 +37,35 @@ namespace Telecom
 				ground_segment_.Add(station);
 				if (node.GetValue("role") == "tx")
 				{
-					ground_tx_.Add(station);
+					tx_.Add(station);
 				}
 				else if (node.GetValue("role") == "rx")
 				{
-					ground_rx_.Add(station);
+					rx_.Add(station);
 				}
 				else
 				{
-					ground_tx_.Add(station);
-					ground_rx_.Add(station);
+					tx_.Add(station);
+					rx_.Add(station);
 				}
 			}
-			customer_template_ = template.GetNode("customer");
+			customer_templates_ = template.GetNodes("customer");
 		}
 
-		void SpawnCustomer()
+		void SpawnCustomer(ConfigNode template)
 		{
-			HashSet<string> biomes = customer_template_.GetValues("biome").ToHashSet();
+			HashSet<string> biomes = template.GetValues("biome").ToHashSet();
 			double lat_deg;
 			double lon_deg;
 			do
 			{
 				const double degree = Math.PI / 180;
 				double sin_lat_min =
-					Math.Sin(double.Parse(customer_template_.GetValue("lat_min")) * degree);
+					Math.Sin(double.Parse(template.GetValue("lat_min")) * degree);
 				double sin_lat_max =
-					Math.Sin(double.Parse(customer_template_.GetValue("lat_max")) * degree);
-				double lon_min_deg = double.Parse(customer_template_.GetValue("lon_min"));
-				double lon_max_deg = double.Parse(customer_template_.GetValue("lon_max"));
+					Math.Sin(double.Parse(template.GetValue("lat_max")) * degree);
+				double lon_min_deg = double.Parse(template.GetValue("lon_min"));
+				double lon_max_deg = double.Parse(template.GetValue("lon_max"));
 				lat_deg = Math.Asin(sin_lat_min + random_.NextDouble() * (sin_lat_max - sin_lat_min)) / degree;
 				lon_deg = lon_min_deg + random_.NextDouble() * (lon_max_deg - lon_min_deg);
 			} while (biomes.Contains(body_.BiomeMap.GetAtt(lat_deg, lon_deg).name));
@@ -77,33 +78,70 @@ namespace Telecom
 			customer_node.AddValue("alt", body_.TerrainAltitude(lat_deg, lon_deg) + 10);
 			customer_node.AddValue("isKSC", false);
 			customer_node.AddValue("icon", "RealAntennas/radio-antenna");
-			foreach (var antenna in customer_template_.GetNodes("Antenna"))
+			foreach (var antenna in template.GetNodes("Antenna"))
 			{
 				customer_node.AddNode(antenna);
 			}
 			customer.Configure(customer_node, body_);
 			upcoming_customers_.Enqueue(customer);
+			if (template.GetValue("role") == "tx")
+			{
+				tx_.Add(customer);
+			}
+			else if (template.GetValue("role") == "rx")
+			{
+				rx_.Add(customer);
+			}
+			else
+			{
+				tx_.Add(customer);
+				rx_.Add(customer);
+			}
 		}
 
 		void Refresh()
 		{
-			foreach (var station in ground_segment_)
+			if (ground_segment_.Any(station => station.Comm == null))
 			{
-				if (station.Comm == null)
-				{
-					return;
-				}
+				return;
 			}
-			while (upcoming_customers_.Peek().Comm != null)
+			CreateGroundSegmentNodesIfNeeded();
+			while (upcoming_customers_.Count > 0 && upcoming_customers_.Peek().Comm != null)
 			{
 				customers_.Add(upcoming_customers_.Dequeue());
-				initialized_ = false;
+				customers_nodes_.Add(MakeSiteNode(customers_.Last()));
+				ra_is_initialized_ = false;
 			}
-			if (!initialized_)
+			if (!ra_is_initialized_)
 			{
 				InitializeRA();
-				initialized_ = true;
 			}
+			UpdateConnections();
+		}
+
+		private void CreateGroundSegmentNodesIfNeeded()
+		{
+			if (ground_segment_nodes_ == null && MapView.fetch != null)
+			{
+				ground_segment_nodes_ = new List<SiteNode>();
+				foreach (var station in ground_segment_)
+				{
+					ground_segment_nodes_.Add(MakeSiteNode(station));
+				}
+			}
+		}
+
+		private static SiteNode MakeSiteNode(RACommNetHome station)
+		{
+			SiteNode site_node = SiteNode.Spawn(new GroundStationSiteNode(station.Comm));
+			UnityEngine.Texture2D stationTexture = GameDatabase.Instance.GetTexture(station.icon, false);
+			site_node.wayPoint.node.SetIcon(UnityEngine.Sprite.Create(
+				stationTexture,
+				new UnityEngine.Rect(0, 0, stationTexture.width, stationTexture.height),
+				new UnityEngine.Vector2(0.5f, 0.5f),
+				100f));
+			site_node.wayPoint.node.OnUpdateVisible += station.OnUpdateVisible;
+			return site_node;
 		}
 
 		private void InitializeRA()
@@ -112,23 +150,84 @@ namespace Telecom
 			precompute.Initialize();
 			precompute.DoThings();
 			precompute.SimulateComplete(
-			  ref RACommNetScenario.RACN.connectionDebugger,
-			  RACommNetScenario.RACN.Nodes);
+				ref RACommNetScenario.RACN.connectionDebugger,
+				RACommNetScenario.RACN.Nodes);
+			ra_is_initialized_ = true;
+		}
+
+		private void UpdateConnections() {
+			var network = CommNet.CommNetNetwork.Instance.CommNet as RACommNetwork;
+			if (network == null)
+			{
+				UnityEngine.Debug.LogError("No RA comm network");
+				return;
+			}
+			var all_ground = ground_segment_.Concat(customers_).ToArray();
+			if (rate_matrix_?.GetLength(0) != all_ground.Length)
+			{
+				rate_matrix_ = new double[all_ground.Length, all_ground.Length];
+				latency_matrix_ = new double[all_ground.Length, all_ground.Length];
+			}
+			min_rate_ = double.PositiveInfinity;
+			active_links_.Clear();
+			for (int tx = 0; tx < all_ground.Length; ++tx)
+			{
+				all_ground[tx].Comm.isHome = false;
+				if (!tx_.Contains(ground_segment_[tx]))
+				{
+					continue;
+				}
+				for (int rx = 0; rx < rx_.Count; ++rx)
+				{
+					if (rx == tx || !rx_.Contains(ground_segment_[rx]))
+					{
+						continue;
+					}
+					var path = new CommNet.CommPath();
+					network.FindClosestWhere(
+						ground_segment_[tx].Comm, path, (_, n) => n == ground_segment_[rx].Comm);
+					double rate = double.PositiveInfinity;
+					double length = 0;
+					foreach (var l in path)
+					{
+						active_links_.Add(l);
+						RACommLink link = l.start[l.end] as RACommLink;
+						rate = Math.Min(rate, link.FwdDataRate);
+						length += (l.a.position - l.b.position).magnitude;
+						if ((l.end as RACommNode).ParentVessel is Vessel vessel)
+						{
+							space_segment_[vessel] = Planetarium.GetUniversalTime();
+						}
+					}
+					if (path.IsEmpty())
+					{
+						rate = 0;
+					}
+					rate_matrix_[tx, rx] = rate;
+					latency_matrix_[tx, rx] = length / 299792458;
+					min_rate_ = Math.Min(min_rate_, rate);
+				}
+			}
 		}
 
 		private CelestialBody body_;
-		private BandInfo uplink_band_;
-		private BandInfo downlink_band_;
 		private bool active_;
-		private Queue<RACommNetHome> upcoming_customers_ = new Queue<RACommNetHome>();
-		private List<RACommNetHome> customers_ = new List<RACommNetHome>();
-		private List<RACommNetHome> ground_segment_ = new List<RACommNetHome>();
-		private bool initialized_ = false;
-		private HashSet<RACommNetHome> ground_tx_ = new HashSet<RACommNetHome>();
-		private HashSet<RACommNetHome> ground_rx_ = new HashSet<RACommNetHome>();
-		private List<Vessel> space_segment_;
-		private ConfigNode customer_template_;
-		private Random random_ = new Random();
-		private string name_;
+		private readonly Queue<RACommNetHome> upcoming_customers_ = new Queue<RACommNetHome>();
+		private readonly List<RACommNetHome> customers_ = new List<RACommNetHome>();
+		private readonly List<SiteNode> customers_nodes_ = new List<SiteNode>();
+		private readonly List<RACommNetHome> ground_segment_ = new List<RACommNetHome>();
+		private List<SiteNode> ground_segment_nodes_;
+		private bool ra_is_initialized_ = false;
+		private readonly HashSet<RACommNetHome> tx_ = new HashSet<RACommNetHome>();
+		private readonly HashSet<RACommNetHome> rx_ = new HashSet<RACommNetHome>();
+		private readonly Dictionary<Vessel, double> space_segment_ = new Dictionary<Vessel, double>();
+		private readonly List<Vector3d> nominal_satellite_locations_ = new List<Vector3d>();
+		private readonly ConfigNode[] customer_templates_;
+		private readonly Random random_ = new Random();
+		private readonly List<CommNet.CommLink> active_links_ = new List<CommNet.CommLink>();
+		private readonly string name_;
+		private double[,] rate_matrix_;
+		private double[,] latency_matrix_;
+		private double min_rate_;
 	}
 }
