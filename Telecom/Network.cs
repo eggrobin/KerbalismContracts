@@ -9,7 +9,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Telecom
+namespace skopos
 {
 	class Network
 	{
@@ -99,7 +99,7 @@ namespace Telecom
 			}
 		}
 
-		void Refresh()
+		public void Refresh()
 		{
 			if (ground_segment_.Any(station => station.Comm == null))
 			{
@@ -162,25 +162,23 @@ namespace Telecom
 				UnityEngine.Debug.LogError("No RA comm network");
 				return;
 			}
-			var all_ground = ground_segment_.Concat(customers_).ToArray();
-			if (rate_matrix_?.GetLength(0) != all_ground.Length)
+			all_ground_ = ground_segment_.Concat(customers_).ToArray();
+			if (rate_matrix_.GetLength(0) != all_ground_.Length)
 			{
-				rate_matrix_ = new double[all_ground.Length, all_ground.Length];
-				latency_matrix_ = new double[all_ground.Length, all_ground.Length];
+				rate_matrix_ = new double[all_ground_.Length, all_ground_.Length];
+				latency_matrix_ = new double[all_ground_.Length, all_ground_.Length];
 			}
 			min_rate_ = double.PositiveInfinity;
 			active_links_.Clear();
-			for (int tx = 0; tx < all_ground.Length; ++tx)
+			for (int tx = 0; tx < all_ground_.Length; ++tx)
 			{
-				all_ground[tx].Comm.isHome = false;
-				if (!tx_.Contains(ground_segment_[tx]))
-				{
-					continue;
-				}
+				all_ground_[tx].Comm.isHome = false;
 				for (int rx = 0; rx < rx_.Count; ++rx)
 				{
-					if (rx == tx || !rx_.Contains(ground_segment_[rx]))
+					if (rx == tx || tx_.Contains(ground_segment_[tx]) || !rx_.Contains(ground_segment_[rx]))
 					{
+						rate_matrix_[tx, rx] = double.NaN;
+						latency_matrix_[tx, rx] = double.NaN;
 						continue;
 					}
 					var path = new CommNet.CommPath();
@@ -220,14 +218,15 @@ namespace Telecom
 		private bool ra_is_initialized_ = false;
 		private readonly HashSet<RACommNetHome> tx_ = new HashSet<RACommNetHome>();
 		private readonly HashSet<RACommNetHome> rx_ = new HashSet<RACommNetHome>();
-		private readonly Dictionary<Vessel, double> space_segment_ = new Dictionary<Vessel, double>();
+		public readonly Dictionary<Vessel, double> space_segment_ = new Dictionary<Vessel, double>();
 		private readonly List<Vector3d> nominal_satellite_locations_ = new List<Vector3d>();
 		private readonly ConfigNode[] customer_templates_;
 		private readonly Random random_ = new Random();
-		private readonly List<CommNet.CommLink> active_links_ = new List<CommNet.CommLink>();
+		public readonly List<CommNet.CommLink> active_links_ = new List<CommNet.CommLink>();
 		private readonly string name_;
-		private double[,] rate_matrix_;
-		private double[,] latency_matrix_;
-		private double min_rate_;
+		public RACommNetHome[] all_ground_ = {};
+		public double[,] rate_matrix_ = {};
+		public double[,] latency_matrix_ = {};
+		public double min_rate_;
 	}
 }
