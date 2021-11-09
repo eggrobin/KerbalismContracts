@@ -72,7 +72,7 @@ namespace skopos
 						for (int rx = 0; rx < network_.all_ground_.Length; ++rx)
 						{
 							UnityEngine.GUILayout.Label(
-								double.IsNaN(network_.latency_matrix_[rx, tx])
+								double.IsNaN(network_.latency_matrix_[tx, rx])
 									? "—"
 									: $"{network_.latency_matrix_[tx, rx] * 1000:F0} ms",
 								UnityEngine.GUILayout.Width(6 * 20));
@@ -130,6 +130,10 @@ namespace skopos
 				return;
 			}
 			var ui = CommNet.CommNetUI.Instance as RACommNetUI;
+			if (ui == null)
+			{
+				return;
+			}
 			foreach (var station in network_.all_ground_)
 			{
 				ui.OverrideShownCones.Add(station.Comm);
@@ -152,7 +156,8 @@ namespace skopos
 				{
 					foreach(var link in satellite.Connection.Comm.Values)
 					{
-						if (network_.space_segment_.ContainsKey((link.b as RACommNode).ParentVessel))
+						Vessel vessel = (link.b as RACommNode).ParentVessel;
+						if (vessel != null && network_.space_segment_.ContainsKey(vessel))
 						{
 							ui.OverrideShownLinks.Add(link);
 						}
