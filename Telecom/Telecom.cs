@@ -33,6 +33,11 @@ namespace skopos
 		{
 			using (new UnityEngine.GUILayout.VerticalScope())
 			{
+				if (UnityEngine.GUILayout.Button("Spawn customer"))
+				{
+					network_.SpawnCustomer();
+					return;
+				}
 				using (new UnityEngine.GUILayout.HorizontalScope())
 				{
 					UnityEngine.GUILayout.Label(@"Tx\Rx", UnityEngine.GUILayout.Width(3 * 20));
@@ -83,11 +88,12 @@ namespace skopos
 				{
 					var station = network_.all_ground_[i];
 					var antenna = station.Comm.RAAntennaList[0];
+					string role =
+						(network_.tx_.Contains(station) ? "T" : "") +
+						(network_.rx_.Contains(station) ? "R" : "") + "x";
 					UnityEngine.GUILayout.Label(
-						$@"{i + 1}: {station.nodeName}; CanTarget={
-							antenna.CanTarget}, Target={antenna.Target} {
-							(network_.tx_.Contains(station) ? "Tx":"")}{
-							(network_.rx_.Contains(station) ? "Rx":"")}");
+						$@"{i + 1}: {role} {station.nodeName}; CanTarget={
+							antenna.CanTarget}, Target={antenna.Target?.ToString() ?? "null"}");
 				}
 				foreach (var vessel_time in network_.space_segment_)
 				{

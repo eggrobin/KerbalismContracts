@@ -52,13 +52,16 @@ namespace skopos
 			customer_templates_ = template.GetNodes("customer");
 		}
 
-		void SpawnCustomer(ConfigNode template)
+		public void SpawnCustomer()
 		{
+			ConfigNode template = customer_templates_[0];
 			HashSet<string> biomes = template.GetValues("biome").ToHashSet();
 			double lat_deg;
 			double lon_deg;
+			int i = 0;
 			do
 			{
+				++i;
 				const double degree = Math.PI / 180;
 				double sin_lat_min =
 					Math.Sin(double.Parse(template.GetValue("lat_min")) * degree);
@@ -68,11 +71,11 @@ namespace skopos
 				double lon_max_deg = double.Parse(template.GetValue("lon_max"));
 				lat_deg = Math.Asin(sin_lat_min + random_.NextDouble() * (sin_lat_max - sin_lat_min)) / degree;
 				lon_deg = lon_min_deg + random_.NextDouble() * (lon_max_deg - lon_min_deg);
-			} while (biomes.Contains(body_.BiomeMap.GetAtt(lat_deg, lon_deg).name));
+			} while (!biomes.Contains(body_.BiomeMap.GetAtt(lat_deg, lon_deg).name));
 			var customer =
 				new UnityEngine.GameObject(body_.name).AddComponent<RACommNetHome>();
 			var customer_node = new ConfigNode();
-			customer_node.AddValue("objectName", $"{name_} customer");
+			customer_node.AddValue("objectName", $"{name_} customer @{lat_deg:F2}, {lon_deg:F2} ({i} tries)");
 			customer_node.AddValue("lat", lat_deg);
 			customer_node.AddValue("lon", lon_deg);
 			customer_node.AddValue("alt", body_.TerrainAltitude(lat_deg, lon_deg) + 10);
@@ -105,11 +108,11 @@ namespace skopos
 			{
 				return;
 			}
-			CreateGroundSegmentNodesIfNeeded();
+			//CreateGroundSegmentNodesIfNeeded();
 			while (upcoming_customers_.Count > 0 && upcoming_customers_.Peek().Comm != null)
 			{
 				customers_.Add(upcoming_customers_.Dequeue());
-				customers_nodes_.Add(MakeSiteNode(customers_.Last()));
+				//customers_nodes_.Add(MakeSiteNode(customers_.Last()));
 				ra_is_initialized_ = false;
 			}
 			if (!ra_is_initialized_)
@@ -146,12 +149,7 @@ namespace skopos
 
 		private void InitializeRA()
 		{
-			var precompute = new Precompute();
-			precompute.Initialize();
-			precompute.DoThings();
-			precompute.SimulateComplete(
-				ref RACommNetScenario.RACN.connectionDebugger,
-				RACommNetScenario.RACN.Nodes);
+			RACommNetScenario.RACN.Rebuild();
 			ra_is_initialized_ = true;
 		}
 
@@ -173,9 +171,9 @@ namespace skopos
 			for (int tx = 0; tx < all_ground_.Length; ++tx)
 			{
 				all_ground_[tx].Comm.isHome = false;
-				for (int rx = 0; rx < rx_.Count; ++rx)
+				for (int rx = 0; rx < all_ground_.Length; ++rx)
 				{
-					if (rx == tx || tx_.Contains(ground_segment_[tx]) || !rx_.Contains(ground_segment_[rx]))
+					if (rx == tx || !tx_.Contains(all_ground_[tx]) || !rx_.Contains(all_ground_[rx]))
 					{
 						rate_matrix_[tx, rx] = double.NaN;
 						latency_matrix_[tx, rx] = double.NaN;
@@ -183,7 +181,7 @@ namespace skopos
 					}
 					var path = new CommNet.CommPath();
 					network.FindClosestWhere(
-						ground_segment_[tx].Comm, path, (_, n) => n == ground_segment_[rx].Comm);
+						all_ground_[tx].Comm, path, (_, n) => n == all_ground_[rx].Comm);
 					double rate = double.PositiveInfinity;
 					double length = 0;
 					foreach (var l in path)
