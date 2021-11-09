@@ -79,12 +79,15 @@ namespace skopos
 						}
 					}
 				}
-				for (int tx = 0; tx < network_.all_ground_.Length; ++tx)
+				for (int i = 0; i < network_.all_ground_.Length; ++i)
 				{
-					var antenna = network_.all_ground_[tx].Comm.RAAntennaList[0];
+					var station = network_.all_ground_[i];
+					var antenna = station.Comm.RAAntennaList[0];
 					UnityEngine.GUILayout.Label(
-						$@"{tx + 1}: {network_.all_ground_[tx].nodeName}; CanTarget={
-							antenna.CanTarget}, Target={antenna.Target}");
+						$@"{i + 1}: {station.nodeName}; CanTarget={
+							antenna.CanTarget}, Target={antenna.Target} {
+							(network_.tx_.Contains(station) ? "Tx":"")}{
+							(network_.rx_.Contains(station) ? "Rx":"")}");
 				}
 				foreach (var vessel_time in network_.space_segment_)
 				{

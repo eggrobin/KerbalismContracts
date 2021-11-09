@@ -216,8 +216,8 @@ namespace skopos
 		private readonly List<RACommNetHome> ground_segment_ = new List<RACommNetHome>();
 		private List<SiteNode> ground_segment_nodes_;
 		private bool ra_is_initialized_ = false;
-		private readonly HashSet<RACommNetHome> tx_ = new HashSet<RACommNetHome>();
-		private readonly HashSet<RACommNetHome> rx_ = new HashSet<RACommNetHome>();
+		public readonly HashSet<RACommNetHome> tx_ = new HashSet<RACommNetHome>();
+		public readonly HashSet<RACommNetHome> rx_ = new HashSet<RACommNetHome>();
 		public readonly Dictionary<Vessel, double> space_segment_ = new Dictionary<Vessel, double>();
 		private readonly List<Vector3d> nominal_satellite_locations_ = new List<Vector3d>();
 		private readonly ConfigNode[] customer_templates_;
