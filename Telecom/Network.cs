@@ -149,7 +149,8 @@ namespace skopos
 
 		private void InitializeRA()
 		{
-			RACommNetScenario.RACN.Rebuild();
+			 (RACommNetScenario.Instance as RACommNetScenario)?.Network?.InvalidateCache();
+			//RACommNetScenario.RACN.Rebuild();
 			ra_is_initialized_ = true;
 		}
 
