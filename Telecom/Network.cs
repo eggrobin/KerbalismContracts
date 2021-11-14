@@ -28,7 +28,7 @@ namespace skopos
 					station_node.AddValue(key, node.GetValue(key));
 				}
 				station_node.AddValue("isKSC", false);
-				station_node.AddValue("icon", "RealAntennas/DSN");
+				station_node.AddValue("icon", "RealAntennas/radio-antenna");
 				foreach (var antenna in node.GetNodes("Antenna"))
 				{
 					station_node.AddNode(antenna);
@@ -56,31 +56,31 @@ namespace skopos
 		{
 			ConfigNode template = customer_templates_[0];
 			HashSet<string> biomes = template.GetValues("biome").ToHashSet();
-			double lat_deg;
-			double lon_deg;
+			const double degree = Math.PI / 180;
+			double lat;
+			double lon;
 			int i = 0;
 			do
 			{
 				++i;
-				const double degree = Math.PI / 180;
 				double sin_lat_min =
 					Math.Sin(double.Parse(template.GetValue("lat_min")) * degree);
 				double sin_lat_max =
 					Math.Sin(double.Parse(template.GetValue("lat_max")) * degree);
-				double lon_min_deg = double.Parse(template.GetValue("lon_min"));
-				double lon_max_deg = double.Parse(template.GetValue("lon_max"));
-				lat_deg = Math.Asin(sin_lat_min + random_.NextDouble() * (sin_lat_max - sin_lat_min)) / degree;
-				lon_deg = lon_min_deg + random_.NextDouble() * (lon_max_deg - lon_min_deg);
-			} while (!biomes.Contains(body_.BiomeMap.GetAtt(lat_deg, lon_deg).name));
+				double lon_min = double.Parse(template.GetValue("lon_min")) * degree;
+				double lon_max = double.Parse(template.GetValue("lon_max")) * degree;
+				lat = Math.Asin(sin_lat_min + random_.NextDouble() * (sin_lat_max - sin_lat_min));
+				lon = lon_min + random_.NextDouble() * (lon_max - lon_min);
+			} while (!biomes.Contains(body_.BiomeMap.GetAtt(lat, lon).name));
 			var customer =
 				new UnityEngine.GameObject(body_.name).AddComponent<RACommNetHome>();
 			var customer_node = new ConfigNode();
-			customer_node.AddValue("objectName", $"{name_} customer @{lat_deg:F2}, {lon_deg:F2} ({i} tries)");
-			customer_node.AddValue("lat", lat_deg);
-			customer_node.AddValue("lon", lon_deg);
-			customer_node.AddValue("alt", body_.TerrainAltitude(lat_deg, lon_deg) + 10);
+			customer_node.AddValue("objectName", $"{name_} customer @{lat / degree:F2}, {lon / degree:F2} ({i} tries)");
+			customer_node.AddValue("lat", lat / degree);
+			customer_node.AddValue("lon", lon / degree);
+			customer_node.AddValue("alt", body_.TerrainAltitude(lat / degree, lon / degree) + 10);
 			customer_node.AddValue("isKSC", false);
-			customer_node.AddValue("icon", "RealAntennas/radio-antenna");
+			customer_node.AddValue("icon", "RealAntennas/DSN");
 			foreach (var antenna in template.GetNodes("Antenna"))
 			{
 				customer_node.AddNode(antenna);
@@ -112,12 +112,8 @@ namespace skopos
 			while (upcoming_customers_.Count > 0 && upcoming_customers_.Peek().Comm != null)
 			{
 				customers_.Add(upcoming_customers_.Dequeue());
-				//customers_nodes_.Add(MakeSiteNode(customers_.Last()));
-				ra_is_initialized_ = false;
-			}
-			if (!ra_is_initialized_)
-			{
-				InitializeRA();
+				customers_nodes_.Add(MakeSiteNode(customers_.Last()));
+				(RACommNetScenario.Instance as RACommNetScenario)?.Network?.InvalidateCache();
 			}
 			UpdateConnections();
 		}
@@ -145,13 +141,6 @@ namespace skopos
 				100f));
 			site_node.wayPoint.node.OnUpdateVisible += station.OnUpdateVisible;
 			return site_node;
-		}
-
-		private void InitializeRA()
-		{
-			 (RACommNetScenario.Instance as RACommNetScenario)?.Network?.InvalidateCache();
-			//RACommNetScenario.RACN.Rebuild();
-			ra_is_initialized_ = true;
 		}
 
 		private void UpdateConnections() {
@@ -214,7 +203,6 @@ namespace skopos
 		private readonly List<SiteNode> customers_nodes_ = new List<SiteNode>();
 		private readonly List<RACommNetHome> ground_segment_ = new List<RACommNetHome>();
 		private List<SiteNode> ground_segment_nodes_;
-		private bool ra_is_initialized_ = false;
 		public readonly HashSet<RACommNetHome> tx_ = new HashSet<RACommNetHome>();
 		public readonly HashSet<RACommNetHome> rx_ = new HashSet<RACommNetHome>();
 		public readonly Dictionary<Vessel, double> space_segment_ = new Dictionary<Vessel, double>();
