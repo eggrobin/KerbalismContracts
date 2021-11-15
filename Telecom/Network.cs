@@ -3,6 +3,7 @@ using RealAntennas.Antenna;
 using RealAntennas.MapUI;
 using RealAntennas.Network;
 using RealAntennas.Precompute;
+using RealAntennas.Targeting;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -102,6 +103,20 @@ namespace skopos
 			}
 		}
 
+		public void AddNominalLocation(Vessel v)
+		{
+			nominal_satellite_locations_.Add(
+				UnityEngine.QuaternionD.Inverse(body_.scaledBody.transform.rotation) *
+					(v.GetWorldPos3D() - body_.position));
+			must_retarget_customers_ = true;
+		}
+
+		public void ClearNominalLocations()
+		{
+			nominal_satellite_locations_.Clear();
+			must_retarget_customers_ = true;
+		}
+
 		public void Refresh()
 		{
 			if (ground_segment_.Any(station => station.Comm == null))
@@ -112,8 +127,16 @@ namespace skopos
 			while (upcoming_customers_.Count > 0 && upcoming_customers_.Peek().Comm != null)
 			{
 				customers_.Add(upcoming_customers_.Dequeue());
+				Retarget(customers_.Last());
 				customers_nodes_.Add(MakeSiteNode(customers_.Last()));
 				(RACommNetScenario.Instance as RACommNetScenario)?.Network?.InvalidateCache();
+			}
+			if (must_retarget_customers_)
+			{
+				foreach (var customer in customers_)
+				{
+					Retarget(customer);
+				}
 			}
 			UpdateConnections();
 		}
@@ -141,6 +164,38 @@ namespace skopos
 				100f));
 			site_node.wayPoint.node.OnUpdateVisible += station.OnUpdateVisible;
 			return site_node;
+		}
+
+		private void Retarget(RACommNetHome station)
+		{
+			if (nominal_satellite_locations_.Count == 0)
+			{
+				station.Comm.RAAntennaList[0].Target = null;
+			}
+			Vector3d station_position =
+					UnityEngine.QuaternionD.Inverse(body_.scaledBody.transform.rotation) *
+						(station.Comm.precisePosition - body_.position);
+			Vector3d station_zenith = station_position.normalized;
+			Vector3d target = default;
+			double max_cos_zenithal_angle = double.NegativeInfinity;
+			foreach (var position in nominal_satellite_locations_)
+			{
+				double cos_zenithal_angle = Vector3d.Dot(station_zenith, position - station_position);
+				if (cos_zenithal_angle > max_cos_zenithal_angle)
+				{
+					max_cos_zenithal_angle = cos_zenithal_angle;
+					target = position;
+				}
+			}
+			body_.GetLatLonAlt(
+				body_.scaledBody.transform.rotation * target + body_.position,
+				out double lat, out double lon, out double alt);
+			var config = new ConfigNode(AntennaTarget.nodeName);
+			config.AddValue("name", $"{AntennaTarget.TargetMode.BodyLatLonAlt}");
+			config.AddValue("bodyName", Planetarium.fetch.Home.name);
+			config.AddValue("latLonAlt", new Vector3d(lat, lon, alt));
+			var antenna = station.Comm.RAAntennaList[0];
+			antenna.Target = AntennaTarget.LoadFromConfig(config, antenna);
 		}
 
 		private void UpdateConnections() {
@@ -207,6 +262,7 @@ namespace skopos
 		public readonly HashSet<RACommNetHome> rx_ = new HashSet<RACommNetHome>();
 		public readonly Dictionary<Vessel, double> space_segment_ = new Dictionary<Vessel, double>();
 		private readonly List<Vector3d> nominal_satellite_locations_ = new List<Vector3d>();
+		bool must_retarget_customers_ = false;
 		private readonly ConfigNode[] customer_templates_;
 		private readonly Random random_ = new Random();
 		public readonly List<CommNet.CommLink> active_links_ = new List<CommNet.CommLink>();
