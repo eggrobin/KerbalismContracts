@@ -33,6 +33,19 @@ namespace skopos
 		{
 			using (new UnityEngine.GUILayout.VerticalScope())
 			{
+				using (new UnityEngine.GUILayout.HorizontalScope())
+				{
+					if (UnityEngine.GUILayout.Button("Add nominal location") && FlightGlobals.ActiveVessel != null)
+					{
+						network_.AddNominalLocation(FlightGlobals.ActiveVessel);
+						return;
+					}
+					if (UnityEngine.GUILayout.Button("Clear nominal locations"))
+					{
+						network_.ClearNominalLocations();
+						return;
+					}
+				}
 				if (UnityEngine.GUILayout.Button("Spawn customer"))
 				{
 					network_.SpawnCustomer();
