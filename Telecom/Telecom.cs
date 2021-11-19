@@ -46,6 +46,10 @@ namespace skopos
 						return;
 					}
 				}
+				foreach (Vector3d location in network_.GetNominalLocationLatLonAlts())
+				{
+					UnityEngine.GUILayout.Label($"{location.x:F2}°, {location.y:F2}°, {location.z/1000:F0} km");
+				}
 				if (UnityEngine.GUILayout.Button("Spawn customer"))
 				{
 					network_.SpawnCustomer();

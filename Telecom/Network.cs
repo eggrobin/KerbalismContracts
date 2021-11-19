@@ -111,6 +111,19 @@ namespace skopos
 			must_retarget_customers_ = true;
 		}
 
+		public Vector3d[] GetNominalLocationLatLonAlts()
+		{
+			var result = new List<Vector3d>(nominal_satellite_locations_.Count);
+			foreach (var position in nominal_satellite_locations_)
+			{
+				body_.GetLatLonAlt(
+					body_.scaledBody.transform.rotation * position + body_.position,
+					out double lat, out double lon, out double alt);
+				result.Add(new Vector3d(lat, lon, alt));
+			}
+			return result.ToArray();
+		}
+
 		public void ClearNominalLocations()
 		{
 			nominal_satellite_locations_.Clear();
