@@ -55,6 +55,11 @@ namespace skopos
 					network_.SpawnCustomer();
 					return;
 				}
+				if (UnityEngine.GUILayout.Button("Clear customers"))
+				{
+					network_.ClearCustomers();
+					return;
+				}
 				using (new UnityEngine.GUILayout.HorizontalScope())
 				{
 					UnityEngine.GUILayout.Label(@"Tx\Rx", UnityEngine.GUILayout.Width(3 * 20));

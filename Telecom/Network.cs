@@ -87,7 +87,7 @@ namespace skopos
 				customer_node.AddNode(antenna);
 			}
 			customer.Configure(customer_node, body_);
-			upcoming_customers_.Enqueue(customer);
+			upcoming_customers_.Enqueue(new Customer(customer));
 			if (template.GetValue("role") == "tx")
 			{
 				tx_.Add(customer);
@@ -101,6 +101,22 @@ namespace skopos
 				tx_.Add(customer);
 				rx_.Add(customer);
 			}
+		}
+
+		internal void ClearCustomers()
+		{
+			foreach (var customer in customers_)
+			{
+				RemoveCustomer(customer);
+			}
+			customers_.Clear();
+		}
+
+		private void RemoveCustomer(Customer customer)
+		{
+			tx_.Remove(customer.station);
+			rx_.Remove(customer.station);
+			customer.Destroy();
 		}
 
 		public void AddNominalLocation(Vessel v)
@@ -137,18 +153,18 @@ namespace skopos
 				return;
 			}
 			//CreateGroundSegmentNodesIfNeeded();
-			while (upcoming_customers_.Count > 0 && upcoming_customers_.Peek().Comm != null)
+			while (upcoming_customers_.Count > 0 && upcoming_customers_.Peek().station.Comm != null)
 			{
 				customers_.Add(upcoming_customers_.Dequeue());
-				Retarget(customers_.Last());
-				customers_nodes_.Add(MakeSiteNode(customers_.Last()));
+				Retarget(customers_.Last().station);
+				customers_.Last().CreateSiteNode();
 				(RACommNetScenario.Instance as RACommNetScenario)?.Network?.InvalidateCache();
 			}
 			if (must_retarget_customers_)
 			{
 				foreach (var customer in customers_)
 				{
-					Retarget(customer);
+					Retarget(customer.station);
 				}
 			}
 			UpdateConnections();
@@ -218,7 +234,7 @@ namespace skopos
 				UnityEngine.Debug.LogError("No RA comm network");
 				return;
 			}
-			all_ground_ = ground_segment_.Concat(customers_).ToArray();
+			all_ground_ = ground_segment_.Concat(from customer in customers_ select customer.station).ToArray();
 			if (rate_matrix_.GetLength(0) != all_ground_.Length)
 			{
 				rate_matrix_ = new double[all_ground_.Length, all_ground_.Length];
@@ -264,11 +280,34 @@ namespace skopos
 			}
 		}
 
+		private class Customer
+		{
+			public Customer(RACommNetHome station)
+			{
+				this.station = station;
+			}
+
+			public void CreateSiteNode()
+			{
+				node_ = MakeSiteNode(station);
+			}
+
+			public void Destroy()
+			{
+				CommNet.CommNetNetwork.Instance.CommNet.Remove(station.Comm);
+				FinePrint.WaypointManager.RemoveWaypoint(node_.wayPoint);
+				UnityEngine.Object.Destroy(node_.gameObject);
+				UnityEngine.Object.Destroy(station);
+			}
+
+			public RACommNetHome station { get; private set; }
+			private SiteNode node_;
+		}
+
 		private CelestialBody body_;
 		private bool active_;
-		private readonly Queue<RACommNetHome> upcoming_customers_ = new Queue<RACommNetHome>();
-		private readonly List<RACommNetHome> customers_ = new List<RACommNetHome>();
-		private readonly List<SiteNode> customers_nodes_ = new List<SiteNode>();
+		private readonly Queue<Customer> upcoming_customers_ = new Queue<Customer>();
+		private readonly List<Customer> customers_ = new List<Customer>();
 		private readonly List<RACommNetHome> ground_segment_ = new List<RACommNetHome>();
 		private List<SiteNode> ground_segment_nodes_;
 		public readonly HashSet<RACommNetHome> tx_ = new HashSet<RACommNetHome>();
