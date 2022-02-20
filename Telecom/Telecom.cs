@@ -50,15 +50,12 @@ namespace skopos
 				{
 					UnityEngine.GUILayout.Label($"{location.x:F2}°, {location.y:F2}°, {location.z/1000:F0} km");
 				}
-				if (UnityEngine.GUILayout.Button("Spawn customer"))
+				using (new UnityEngine.GUILayout.HorizontalScope())
 				{
-					network_.SpawnCustomer();
-					return;
-				}
-				if (UnityEngine.GUILayout.Button("Clear customers"))
-				{
-					network_.ClearCustomers();
-					return;
+					if (int.TryParse(UnityEngine.GUILayout.TextField(network_.customer_pool_size.ToString()), out int pool_size))
+					{
+						network_.customer_pool_size = Math.Max(pool_size, 0);
+					}
 				}
 				using (new UnityEngine.GUILayout.HorizontalScope())
 				{

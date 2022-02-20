@@ -53,7 +53,7 @@ namespace skopos
 			customer_templates_ = template.GetNodes("customer");
 		}
 
-		public void SpawnCustomer()
+		private void SpawnCustomer()
 		{
 			ConfigNode template = customer_templates_[0];
 			HashSet<string> biomes = template.GetValues("biome").ToHashSet();
@@ -103,15 +103,6 @@ namespace skopos
 			}
 		}
 
-		internal void ClearCustomers()
-		{
-			foreach (var customer in customers_)
-			{
-				RemoveCustomer(customer);
-			}
-			customers_.Clear();
-		}
-
 		private void RemoveCustomer(Customer customer)
 		{
 			tx_.Remove(customer.station);
@@ -152,13 +143,27 @@ namespace skopos
 			{
 				return;
 			}
-			//CreateGroundSegmentNodesIfNeeded();
-			while (upcoming_customers_.Count > 0 && upcoming_customers_.Peek().station.Comm != null)
+			while (imminent_customers_.Count > 0)
 			{
-				customers_.Add(upcoming_customers_.Dequeue());
+				customers_.Enqueue(imminent_customers_.Dequeue());
 				Retarget(customers_.Last().station);
 				customers_.Last().CreateSiteNode();
 				(RACommNetScenario.Instance as RACommNetScenario)?.Network?.InvalidateCache();
+			}
+			while (upcoming_customers_.Count > 0 && upcoming_customers_.Peek().station.Comm != null)
+			{
+				imminent_customers_.Enqueue(upcoming_customers_.Dequeue());
+			}
+			while (customers_.Count > customer_pool_size)
+			{
+				RemoveCustomer(customers_.Dequeue());
+			}
+			if (upcoming_customers_.Count == 0)
+			{
+				for (int i = 0; i < customer_pool_size; ++i)
+				{
+					SpawnCustomer();
+				}
 			}
 			if (must_retarget_customers_)
 			{
@@ -285,6 +290,7 @@ namespace skopos
 			public Customer(RACommNetHome station)
 			{
 				this.station = station;
+				creation_time_ = Planetarium.GetUniversalTime();
 			}
 
 			public void CreateSiteNode()
@@ -301,13 +307,19 @@ namespace skopos
 			}
 
 			public RACommNetHome station { get; private set; }
+			public double age => Planetarium.GetUniversalTime() - creation_time_;
+
 			private SiteNode node_;
+			private readonly double creation_time_;
 		}
+
+		public int customer_pool_size { get; set; }
 
 		private CelestialBody body_;
 		private bool active_;
 		private readonly Queue<Customer> upcoming_customers_ = new Queue<Customer>();
-		private readonly List<Customer> customers_ = new List<Customer>();
+		private readonly Queue<Customer> imminent_customers_ = new Queue<Customer>();
+		private readonly Queue<Customer> customers_ = new Queue<Customer>();
 		private readonly List<RACommNetHome> ground_segment_ = new List<RACommNetHome>();
 		private List<SiteNode> ground_segment_nodes_;
 		public readonly HashSet<RACommNetHome> tx_ = new HashSet<RACommNetHome>();
