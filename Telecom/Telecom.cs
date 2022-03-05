@@ -106,7 +106,7 @@ namespace skopos
 							UnityEngine.GUILayout.Label(
 								double.IsNaN(latency)
 									? "—"
-									: $"{latency * 1000:F0} ms\n{availability:P2} > {threshold * 1000:F0} ms",
+									: $"{latency * 1000:F0} ms\n{availability:P2} < {threshold * 1000:F0} ms",
 								UnityEngine.GUILayout.Width(6 * 20));
 						}
 					}

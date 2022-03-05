@@ -246,7 +246,14 @@ namespace skopos
 					DestroyStation();
 					station = imminent_station_;
 					imminent_station_ = null;
-					node_ = MakeSiteNode(station);
+					try
+					{
+						node_ = MakeSiteNode(station);
+					} catch (NullReferenceException)
+					{
+						UnityEngine.Debug.LogError("NullReferenceException while making customer site node.");
+						node_ = null;
+					}
 					network_.Retarget(station);
 					(RACommNetScenario.Instance as RACommNetScenario)?.Network?.InvalidateCache();
 				}
@@ -315,8 +322,11 @@ namespace skopos
 				network_.tx_.Remove(station);
 				network_.rx_.Remove(station);
 				CommNet.CommNetNetwork.Instance.CommNet.Remove(station.Comm);
-				FinePrint.WaypointManager.RemoveWaypoint(node_.wayPoint);
-				UnityEngine.Object.Destroy(node_.gameObject);
+				if (node_ != null)
+				{
+					FinePrint.WaypointManager.RemoveWaypoint(node_.wayPoint);
+					UnityEngine.Object.Destroy(node_.gameObject);
+				}
 				UnityEngine.Object.Destroy(station);
 				station = null;
 				node_ = null;
@@ -335,17 +345,22 @@ namespace skopos
 		{
 			public void AddMeasurement(double latency, double rate)
 			{
-				current_latency = latency;
-				current_rate = rate;
-				if (latency >= latency_threshold)
+				if (last_measurement_time_ != null)
 				{
-					++latencies_above_threshold_;
+					double Δt = Planetarium.GetUniversalTime() - last_measurement_time_.Value;
+					current_latency = latency;
+					current_rate = rate;
+					if (latency <= latency_threshold)
+					{
+						time_below_latency_threshold_ += Δt;
+					}
+					if (rate >= rate_threshold)
+					{
+						time_above_rate_threshold_ += Δt;
+					}
+					total_measurement_time_ += Δt;
 				}
-				if (rate >= rate_threshold)
-				{
-					++rates_above_threshold_;
-				}
-				++measurements_;
+				last_measurement_time_ = Planetarium.GetUniversalTime();
 			}
 			public double current_latency { get; private set; }
 			public double current_rate { get; private set; }
@@ -353,11 +368,12 @@ namespace skopos
 			public double rate_threshold { get; set; }
 			public double target_latency_availability { get; set; }
 			public double target_rate_availability { get; set; }
-			public double latency_availability => latencies_above_threshold_ / measurements_;
-			public double rate_availability => rates_above_threshold_ / measurements_;
-			private double latencies_above_threshold_;
-			private double rates_above_threshold_;
-			private double measurements_;
+			public double latency_availability => time_below_latency_threshold_ / total_measurement_time_;
+			public double rate_availability => time_above_rate_threshold_ / total_measurement_time_;
+			private double time_below_latency_threshold_;
+			private double time_above_rate_threshold_;
+			private double total_measurement_time_;
+			private double? last_measurement_time_;
 		}
 
 		public int customer_pool_size { get; set; }
