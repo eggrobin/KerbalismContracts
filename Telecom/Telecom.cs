@@ -72,10 +72,15 @@ namespace skopos
 						UnityEngine.GUILayout.Label($"{tx + 1}", UnityEngine.GUILayout.Width(3 * 20));
 						for (int rx = 0; rx < network_.all_ground_.Length; ++rx)
 						{
+							double rate = network_.connections_[tx, rx].current_rate;
+							double availability = network_.connections_[tx, rx].rate_availability;
+							double threshold = network_.connections_[tx, rx].rate_threshold;
 							UnityEngine.GUILayout.Label(
-								double.IsNaN(network_.rate_matrix_[tx, rx])
+								double.IsNaN(rate)
 									? "—"
-									: RATools.PrettyPrintDataRate(network_.rate_matrix_[tx, rx]),
+									: (RATools.PrettyPrintDataRate(rate) + "\n" +
+									   availability.ToString("P2") + " > " +
+									   RATools.PrettyPrintDataRate(threshold)),
 								UnityEngine.GUILayout.Width(6 * 20));
 						}
 					}
@@ -95,10 +100,13 @@ namespace skopos
 						UnityEngine.GUILayout.Label($"{tx + 1}", UnityEngine.GUILayout.Width(3 * 20));
 						for (int rx = 0; rx < network_.all_ground_.Length; ++rx)
 						{
+							double latency = network_.connections_[tx, rx].current_latency;
+							double availability = network_.connections_[tx, rx].rate_availability;
+							double threshold = network_.connections_[tx, rx].latency_threshold;
 							UnityEngine.GUILayout.Label(
-								double.IsNaN(network_.latency_matrix_[tx, rx])
+								double.IsNaN(latency)
 									? "—"
-									: $"{network_.latency_matrix_[tx, rx] * 1000:F0} ms",
+									: $"{latency * 1000:F0} ms\n{availability:P2} > {threshold * 1000:F0} ms",
 								UnityEngine.GUILayout.Width(6 * 20));
 						}
 					}

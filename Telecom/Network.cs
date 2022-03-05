@@ -50,64 +50,31 @@ namespace skopos
 					rx_.Add(station);
 				}
 			}
-			customer_templates_ = template.GetNodes("customer");
-		}
-
-		private void SpawnCustomer()
-		{
-			ConfigNode template = customer_templates_[0];
-			HashSet<string> biomes = template.GetValues("biome").ToHashSet();
-			const double degree = Math.PI / 180;
-			double lat;
-			double lon;
-			int i = 0;
-			do
+			customers_ = (from customer_template in template.GetNodes("customer")
+						  select new Customer(customer_template, this)).ToArray();
+			int n = ground_segment_.Count + customers_.Length;
+			connections_ = new Connection[n, n];
+			for (int i = 0; i < n; i++)
 			{
-				++i;
-				double sin_lat_min =
-					Math.Sin(double.Parse(template.GetValue("lat_min")) * degree);
-				double sin_lat_max =
-					Math.Sin(double.Parse(template.GetValue("lat_max")) * degree);
-				double lon_min = double.Parse(template.GetValue("lon_min")) * degree;
-				double lon_max = double.Parse(template.GetValue("lon_max")) * degree;
-				lat = Math.Asin(sin_lat_min + random_.NextDouble() * (sin_lat_max - sin_lat_min));
-				lon = lon_min + random_.NextDouble() * (lon_max - lon_min);
-			} while (!biomes.Contains(body_.BiomeMap.GetAtt(lat, lon).name));
-			var customer =
-				new UnityEngine.GameObject(body_.name).AddComponent<RACommNetHome>();
-			var customer_node = new ConfigNode();
-			customer_node.AddValue("objectName", $"{name_} customer @{lat / degree:F2}, {lon / degree:F2} ({i} tries)");
-			customer_node.AddValue("lat", lat / degree);
-			customer_node.AddValue("lon", lon / degree);
-			customer_node.AddValue("alt", body_.TerrainAltitude(lat / degree, lon / degree) + 10);
-			customer_node.AddValue("isKSC", false);
-			customer_node.AddValue("icon", "RealAntennas/DSN");
-			foreach (var antenna in template.GetNodes("Antenna"))
-			{
-				customer_node.AddNode(antenna);
+				for (int j = 0; j < n; ++j)
+				{
+					connections_[i, j] = new Connection();
+				}
 			}
-			customer.Configure(customer_node, body_);
-			upcoming_customers_.Enqueue(new Customer(customer));
-			if (template.GetValue("role") == "tx")
+			foreach (var node in template.GetNodes("service_level"))
 			{
-				tx_.Add(customer);
+				// TODO(egg): tx/rx-specific clauses.
+				for (int i = 0; i < n; i++)
+				{
+					for (int j = 0; j < n; ++j)
+					{
+						connections_[i, j].latency_threshold = double.Parse(node.GetValue("latency"));
+						connections_[i, j].rate_threshold = double.Parse(node.GetValue("rate"));
+						connections_[i, j].target_latency_availability = double.Parse(node.GetValue("latency_availability"));
+						connections_[i, j].target_rate_availability = double.Parse(node.GetValue("rate_availability"));
+					}
+				}
 			}
-			else if (template.GetValue("role") == "rx")
-			{
-				rx_.Add(customer);
-			}
-			else
-			{
-				tx_.Add(customer);
-				rx_.Add(customer);
-			}
-		}
-
-		private void RemoveCustomer(Customer customer)
-		{
-			tx_.Remove(customer.station);
-			rx_.Remove(customer.station);
-			customer.Destroy();
 		}
 
 		public void AddNominalLocation(Vessel v)
@@ -143,27 +110,13 @@ namespace skopos
 			{
 				return;
 			}
-			while (imminent_customers_.Count > 0)
+			foreach (var customer in customers_)
 			{
-				customers_.Enqueue(imminent_customers_.Dequeue());
-				Retarget(customers_.Last().station);
-				customers_.Last().CreateSiteNode();
-				(RACommNetScenario.Instance as RACommNetScenario)?.Network?.InvalidateCache();
+				customer.Cycle();
 			}
-			while (upcoming_customers_.Count > 0 && upcoming_customers_.Peek().station.Comm != null)
+			if (customers_.Any(customer => customer.station == null))
 			{
-				imminent_customers_.Enqueue(upcoming_customers_.Dequeue());
-			}
-			while (customers_.Count > customer_pool_size)
-			{
-				RemoveCustomer(customers_.Dequeue());
-			}
-			if (upcoming_customers_.Count == 0)
-			{
-				for (int i = 0; i < customer_pool_size; ++i)
-				{
-					SpawnCustomer();
-				}
+				return;
 			}
 			if (must_retarget_customers_)
 			{
@@ -240,11 +193,6 @@ namespace skopos
 				return;
 			}
 			all_ground_ = ground_segment_.Concat(from customer in customers_ select customer.station).ToArray();
-			if (rate_matrix_.GetLength(0) != all_ground_.Length)
-			{
-				rate_matrix_ = new double[all_ground_.Length, all_ground_.Length];
-				latency_matrix_ = new double[all_ground_.Length, all_ground_.Length];
-			}
 			min_rate_ = double.PositiveInfinity;
 			active_links_.Clear();
 			for (int tx = 0; tx < all_ground_.Length; ++tx)
@@ -254,8 +202,7 @@ namespace skopos
 				{
 					if (rx == tx || !tx_.Contains(all_ground_[tx]) || !rx_.Contains(all_ground_[rx]))
 					{
-						rate_matrix_[tx, rx] = double.NaN;
-						latency_matrix_[tx, rx] = double.NaN;
+						connections_[tx, rx].AddMeasurement(double.NaN, double.NaN);
 						continue;
 					}
 					var path = new CommNet.CommPath();
@@ -278,8 +225,7 @@ namespace skopos
 					{
 						rate = 0;
 					}
-					rate_matrix_[tx, rx] = rate;
-					latency_matrix_[tx, rx] = length / 299792458;
+					connections_[tx, rx].AddMeasurement(rate: rate, latency: length / 299792458);
 					min_rate_ = Math.Min(min_rate_, rate);
 				}
 			}
@@ -287,39 +233,138 @@ namespace skopos
 
 		private class Customer
 		{
-			public Customer(RACommNetHome station)
+			public Customer(ConfigNode template, Network network)
 			{
-				this.station = station;
-				creation_time_ = Planetarium.GetUniversalTime();
+				template_ = template;
+				network_ = network;
+				upcoming_station_ = MakeStation();
+			}
+			public void Cycle()
+			{
+				if (imminent_station_ != null)
+				{
+					DestroyStation();
+					station = imminent_station_;
+					imminent_station_ = null;
+					node_ = MakeSiteNode(station);
+					network_.Retarget(station);
+					(RACommNetScenario.Instance as RACommNetScenario)?.Network?.InvalidateCache();
+				}
+				if (upcoming_station_?.Comm != null)
+				{
+					imminent_station_ = upcoming_station_;
+					upcoming_station_ = MakeStation();
+				}
 			}
 
-			public void CreateSiteNode()
+			private RACommNetHome MakeStation()
 			{
-				node_ = MakeSiteNode(station);
+				HashSet<string> biomes = template_.GetValues("biome").ToHashSet();
+				const double degree = Math.PI / 180;
+				double lat;
+				double lon;
+				int i = 0;
+				do
+				{
+					++i;
+					double sin_lat_min =
+						Math.Sin(double.Parse(template_.GetValue("lat_min")) * degree);
+					double sin_lat_max =
+						Math.Sin(double.Parse(template_.GetValue("lat_max")) * degree);
+					double lon_min = double.Parse(template_.GetValue("lon_min")) * degree;
+					double lon_max = double.Parse(template_.GetValue("lon_max")) * degree;
+					lat = Math.Asin(sin_lat_min + network_.random_.NextDouble() * (sin_lat_max - sin_lat_min));
+					lon = lon_min + network_.random_.NextDouble() * (lon_max - lon_min);
+				} while (!biomes.Contains(network_.body_.BiomeMap.GetAtt(lat, lon).name));
+				var new_station =
+					new UnityEngine.GameObject(network_.body_.name).AddComponent<RACommNetHome>();
+				var node = new ConfigNode();
+				node.AddValue("objectName", $"{network_.name_} customer @{lat / degree:F2}, {lon / degree:F2} ({i} tries)");
+				node.AddValue("lat", lat / degree);
+				node.AddValue("lon", lon / degree);
+				node.AddValue("alt", network_.body_.TerrainAltitude(lat / degree, lon / degree) + 10);
+				node.AddValue("isKSC", false);
+				node.AddValue("icon", "RealAntennas/DSN");
+				foreach (var antenna in template_.GetNodes("Antenna"))
+				{
+					node.AddNode(antenna);
+				}
+				new_station.Configure(node, network_.body_);
+				if (template_.GetValue("role") == "tx")
+				{
+					network_.tx_.Add(new_station);
+				}
+				else if (template_.GetValue("role") == "rx")
+				{
+					network_.rx_.Add(new_station);
+				}
+				else
+				{
+					network_.tx_.Add(new_station);
+					network_.rx_.Add(new_station);
+				}
+				return new_station;
 			}
 
-			public void Destroy()
+			private void DestroyStation()
 			{
+				if (station == null)
+				{
+					return;
+				}
+				network_.tx_.Remove(station);
+				network_.rx_.Remove(station);
 				CommNet.CommNetNetwork.Instance.CommNet.Remove(station.Comm);
 				FinePrint.WaypointManager.RemoveWaypoint(node_.wayPoint);
 				UnityEngine.Object.Destroy(node_.gameObject);
 				UnityEngine.Object.Destroy(station);
+				station = null;
+				node_ = null;
 			}
 
+			private RACommNetHome upcoming_station_;
+			private RACommNetHome imminent_station_;
 			public RACommNetHome station { get; private set; }
-			public double age => Planetarium.GetUniversalTime() - creation_time_;
-
 			private SiteNode node_;
-			private readonly double creation_time_;
+
+			private ConfigNode template_;
+			private Network network_;
+		}
+
+		public class Connection
+		{
+			public void AddMeasurement(double latency, double rate)
+			{
+				current_latency = latency;
+				current_rate = rate;
+				if (latency >= latency_threshold)
+				{
+					++latencies_above_threshold_;
+				}
+				if (rate >= rate_threshold)
+				{
+					++rates_above_threshold_;
+				}
+				++measurements_;
+			}
+			public double current_latency { get; private set; }
+			public double current_rate { get; private set; }
+			public double latency_threshold { get; set; }
+			public double rate_threshold { get; set; }
+			public double target_latency_availability { get; set; }
+			public double target_rate_availability { get; set; }
+			public double latency_availability => latencies_above_threshold_ / measurements_;
+			public double rate_availability => rates_above_threshold_ / measurements_;
+			private double latencies_above_threshold_;
+			private double rates_above_threshold_;
+			private double measurements_;
 		}
 
 		public int customer_pool_size { get; set; }
 
 		private CelestialBody body_;
 		private bool active_;
-		private readonly Queue<Customer> upcoming_customers_ = new Queue<Customer>();
-		private readonly Queue<Customer> imminent_customers_ = new Queue<Customer>();
-		private readonly Queue<Customer> customers_ = new Queue<Customer>();
+		private readonly Customer[] customers_;
 		private readonly List<RACommNetHome> ground_segment_ = new List<RACommNetHome>();
 		private List<SiteNode> ground_segment_nodes_;
 		public readonly HashSet<RACommNetHome> tx_ = new HashSet<RACommNetHome>();
@@ -327,13 +372,11 @@ namespace skopos
 		public readonly Dictionary<Vessel, double> space_segment_ = new Dictionary<Vessel, double>();
 		private readonly List<Vector3d> nominal_satellite_locations_ = new List<Vector3d>();
 		bool must_retarget_customers_ = false;
-		private readonly ConfigNode[] customer_templates_;
 		private readonly Random random_ = new Random();
 		public readonly List<CommNet.CommLink> active_links_ = new List<CommNet.CommLink>();
 		private readonly string name_;
 		public RACommNetHome[] all_ground_ = {};
-		public double[,] rate_matrix_ = {};
-		public double[,] latency_matrix_ = {};
+		public Connection[,] connections_ = {};
 		public double min_rate_;
 	}
 }
