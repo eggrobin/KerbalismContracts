@@ -213,7 +213,7 @@ namespace skopos
 					foreach (var l in path)
 					{
 						active_links_.Add(l);
-						RACommLink link = l.start[l.end] as RACommLink;
+						RACommLink link = l as RACommLink;
 						rate = Math.Min(rate, link.FwdDataRate);
 						length += (l.a.position - l.b.position).magnitude;
 						if ((l.end as RACommNode).ParentVessel is Vessel vessel)
@@ -237,7 +237,6 @@ namespace skopos
 			{
 				template_ = template;
 				network_ = network;
-				upcoming_station_ = MakeStation();
 			}
 			public void Cycle()
 			{
@@ -246,20 +245,17 @@ namespace skopos
 					DestroyStation();
 					station = imminent_station_;
 					imminent_station_ = null;
-					try
-					{
-						node_ = MakeSiteNode(station);
-					} catch (NullReferenceException)
-					{
-						UnityEngine.Debug.LogError("NullReferenceException while making customer site node.");
-						node_ = null;
-					}
+					//node_ = MakeSiteNode(station);
 					network_.Retarget(station);
 					(RACommNetScenario.Instance as RACommNetScenario)?.Network?.InvalidateCache();
 				}
 				if (upcoming_station_?.Comm != null)
 				{
 					imminent_station_ = upcoming_station_;
+					upcoming_station_ = null;
+				}
+				if (upcoming_station_ == null)
+				{
 					upcoming_station_ = MakeStation();
 				}
 			}
