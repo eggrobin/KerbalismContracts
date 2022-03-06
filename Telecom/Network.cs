@@ -240,19 +240,25 @@ namespace skopos
 			}
 			public void Cycle()
 			{
+				if (network_.freeze_customers_)
+				{
+					return;
+				}
 				if (imminent_station_ != null)
 				{
 					DestroyStation();
 					station = imminent_station_;
 					imminent_station_ = null;
+					station.Comm.isHome = false;
 					//node_ = MakeSiteNode(station);
-					network_.Retarget(station);
-					(RACommNetScenario.Instance as RACommNetScenario)?.Network?.InvalidateCache();
 				}
-				if (upcoming_station_?.Comm != null)
+				if (imminent_station_ == null && upcoming_station_?.Comm != null)
 				{
 					imminent_station_ = upcoming_station_;
 					upcoming_station_ = null;
+					imminent_station_.Comm.isHome = false;
+					network_.Retarget(imminent_station_);
+					(RACommNetScenario.Instance as RACommNetScenario)?.Network?.InvalidateCache();
 				}
 				if (upcoming_station_ == null)
 				{
@@ -390,5 +396,6 @@ namespace skopos
 		public RACommNetHome[] all_ground_ = {};
 		public Connection[,] connections_ = {};
 		public double min_rate_;
+		public bool freeze_customers_;
 	}
 }

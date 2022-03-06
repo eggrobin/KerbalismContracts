@@ -45,6 +45,7 @@ namespace skopos
 						network_.ClearNominalLocations();
 						return;
 					}
+					network_.freeze_customers_ = UnityEngine.GUILayout.Toggle(network_.freeze_customers_, "Freeze customers");
 				}
 				foreach (Vector3d location in network_.GetNominalLocationLatLonAlts())
 				{
