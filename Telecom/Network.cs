@@ -129,6 +129,7 @@ namespace skopos
 				{
 					Retarget(customer.station);
 				}
+				must_retarget_customers_ = false;
 			}
 			UpdateConnections();
 		}
@@ -248,31 +249,23 @@ namespace skopos
 				network_ = network;
 			}
 
-			private void WaitForPostUpdate()
-			{
-				--imminent_countdown_;
-			}
-
 			public void Cycle()
 			{
 				if (network_.freeze_customers_)
 				{
 					return;
 				}
-				if (imminent_station_ != null && imminent_countdown_ <= 0)
+				if (imminent_station_ != null)
 				{
 					DestroyStation();
 					station = imminent_station_;
 					imminent_station_ = null;
-					station.Comm.OnNetworkPostUpdate -= WaitForPostUpdate;
 				}
 				if (imminent_station_ == null && upcoming_station_?.Comm != null)
 				{
 					imminent_station_ = upcoming_station_;
-					(RACommNetScenario.Instance as RACommNetScenario)?.Network?.InvalidateCache();
-					imminent_countdown_ = 50;
-					imminent_station_.Comm.OnNetworkPreUpdate += WaitForPostUpdate;
 					upcoming_station_ = null;
+					(RACommNetScenario.Instance as RACommNetScenario)?.Network?.InvalidateCache();
 				}
 				if (upcoming_station_ == null)
 				{
@@ -310,12 +303,13 @@ namespace skopos
 				node.AddValue("isKSC", false);
 				node.AddValue("isHome", false);
 				node.AddValue("icon", "RealAntennas/DSN");
+				Vector3d station_position = network_.body_.GetWorldSurfacePosition(lat, lon, alt);
 				foreach (var antenna in template_.GetNodes("Antenna"))
 				{
-					node.AddNode(antenna);
+					var targeted_antenna = antenna.CreateCopy();
+					targeted_antenna.AddNode(network_.MakeTargetConfig(station_position));
+					node.AddNode(targeted_antenna);
 				}
-				Vector3d station_position = network_.body_.GetWorldSurfacePosition(lat, lon, alt);
-				node.AddNode(network_.MakeTargetConfig(station_position));
 				new_station.Configure(node, network_.body_);
 				if (template_.GetValue("role") == "tx")
 				{
@@ -354,7 +348,6 @@ namespace skopos
 
 			private RACommNetHome upcoming_station_;
 			private RACommNetHome imminent_station_;
-			private int imminent_countdown_;
 			public RACommNetHome station { get; private set; }
 			private SiteNode node_;
 
