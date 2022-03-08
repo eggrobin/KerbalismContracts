@@ -29,6 +29,7 @@ namespace skopos
 					station_node.AddValue(key, node.GetValue(key));
 				}
 				station_node.AddValue("isKSC", false);
+				station_node.AddValue("isHome", false);
 				station_node.AddValue("icon", "RealAntennas/radio-antenna");
 				foreach (var antenna in node.GetNodes("Antenna"))
 				{
@@ -110,6 +111,10 @@ namespace skopos
 			{
 				return;
 			}
+			foreach (var station in ground_segment_)
+			{
+				station.Comm.RAAntennaList[0].Target = null;
+			}
 			foreach (var customer in customers_)
 			{
 				customer.Cycle();
@@ -153,15 +158,16 @@ namespace skopos
 			return site_node;
 		}
 
-		private void Retarget(RACommNetHome station)
+		private ConfigNode MakeTargetConfig(Vector3d station_world_position)
 		{
+			var config = new ConfigNode(AntennaTarget.nodeName);
 			if (nominal_satellite_locations_.Count == 0)
 			{
-				station.Comm.RAAntennaList[0].Target = null;
+				return config;
 			}
 			Vector3d station_position =
 					UnityEngine.QuaternionD.Inverse(body_.scaledBody.transform.rotation) *
-						(station.Comm.precisePosition - body_.position);
+						(station_world_position - body_.position);
 			Vector3d station_zenith = station_position.normalized;
 			Vector3d target = default;
 			double max_cos_zenithal_angle = double.NegativeInfinity;
@@ -177,12 +183,16 @@ namespace skopos
 			body_.GetLatLonAlt(
 				body_.scaledBody.transform.rotation * target + body_.position,
 				out double lat, out double lon, out double alt);
-			var config = new ConfigNode(AntennaTarget.nodeName);
 			config.AddValue("name", $"{AntennaTarget.TargetMode.BodyLatLonAlt}");
 			config.AddValue("bodyName", Planetarium.fetch.Home.name);
 			config.AddValue("latLonAlt", new Vector3d(lat, lon, alt));
+			return config;
+		}
+
+		private void Retarget(RACommNetHome station)
+		{
 			var antenna = station.Comm.RAAntennaList[0];
-			antenna.Target = AntennaTarget.LoadFromConfig(config, antenna);
+			antenna.Target = AntennaTarget.LoadFromConfig(MakeTargetConfig(station.Comm.precisePosition), antenna);
 		}
 
 		private void UpdateConnections() {
@@ -197,7 +207,6 @@ namespace skopos
 			active_links_.Clear();
 			for (int tx = 0; tx < all_ground_.Length; ++tx)
 			{
-				all_ground_[tx].Comm.isHome = false;
 				for (int rx = 0; rx < all_ground_.Length; ++rx)
 				{
 					if (rx == tx || !tx_.Contains(all_ground_[tx]) || !rx_.Contains(all_ground_[rx]))
@@ -238,27 +247,32 @@ namespace skopos
 				template_ = template;
 				network_ = network;
 			}
+
+			private void WaitForPostUpdate()
+			{
+				--imminent_countdown_;
+			}
+
 			public void Cycle()
 			{
 				if (network_.freeze_customers_)
 				{
 					return;
 				}
-				if (imminent_station_ != null)
+				if (imminent_station_ != null && imminent_countdown_ <= 0)
 				{
 					DestroyStation();
 					station = imminent_station_;
 					imminent_station_ = null;
-					station.Comm.isHome = false;
-					//node_ = MakeSiteNode(station);
+					station.Comm.OnNetworkPostUpdate -= WaitForPostUpdate;
 				}
 				if (imminent_station_ == null && upcoming_station_?.Comm != null)
 				{
 					imminent_station_ = upcoming_station_;
-					upcoming_station_ = null;
-					imminent_station_.Comm.isHome = false;
-					network_.Retarget(imminent_station_);
 					(RACommNetScenario.Instance as RACommNetScenario)?.Network?.InvalidateCache();
+					imminent_countdown_ = 50;
+					imminent_station_.Comm.OnNetworkPreUpdate += WaitForPostUpdate;
+					upcoming_station_ = null;
 				}
 				if (upcoming_station_ == null)
 				{
@@ -291,13 +305,17 @@ namespace skopos
 				node.AddValue("objectName", $"{network_.name_} customer @{lat / degree:F2}, {lon / degree:F2} ({i} tries)");
 				node.AddValue("lat", lat / degree);
 				node.AddValue("lon", lon / degree);
-				node.AddValue("alt", network_.body_.TerrainAltitude(lat / degree, lon / degree) + 10);
+				double alt = network_.body_.TerrainAltitude(lat / degree, lon / degree) + 10;
+				node.AddValue("alt", alt);
 				node.AddValue("isKSC", false);
+				node.AddValue("isHome", false);
 				node.AddValue("icon", "RealAntennas/DSN");
 				foreach (var antenna in template_.GetNodes("Antenna"))
 				{
 					node.AddNode(antenna);
 				}
+				Vector3d station_position = network_.body_.GetWorldSurfacePosition(lat, lon, alt);
+				node.AddNode(network_.MakeTargetConfig(station_position));
 				new_station.Configure(node, network_.body_);
 				if (template_.GetValue("role") == "tx")
 				{
@@ -336,6 +354,7 @@ namespace skopos
 
 			private RACommNetHome upcoming_station_;
 			private RACommNetHome imminent_station_;
+			private int imminent_countdown_;
 			public RACommNetHome station { get; private set; }
 			private SiteNode node_;
 
