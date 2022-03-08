@@ -63,51 +63,41 @@ namespace skopos
 					UnityEngine.GUILayout.Label(@"Tx\Rx", UnityEngine.GUILayout.Width(3 * 20));
 					for (int rx = 0; rx < network_.all_ground_.Length; ++rx)
 					{
-						UnityEngine.GUILayout.Label($"{rx + 1}", UnityEngine.GUILayout.Width(6 * 20));
-					}
-				}
-				for (int tx = 0; tx < network_.all_ground_.Length; ++tx)
-				{
-					using (new UnityEngine.GUILayout.HorizontalScope())
-					{
-						UnityEngine.GUILayout.Label($"{tx + 1}", UnityEngine.GUILayout.Width(3 * 20));
-						for (int rx = 0; rx < network_.all_ground_.Length; ++rx)
+						if (!network_.rx_.Contains(network_.all_ground_[rx]))
 						{
-							double rate = network_.connections_[tx, rx].current_rate;
-							double availability = network_.connections_[tx, rx].rate_availability;
-							double threshold = network_.connections_[tx, rx].rate_threshold;
-							UnityEngine.GUILayout.Label(
-								double.IsNaN(rate)
-									? "—"
-									: (RATools.PrettyPrintDataRate(rate) + "\n" +
-									   availability.ToString("P2") + " > " +
-									   RATools.PrettyPrintDataRate(threshold)),
-								UnityEngine.GUILayout.Width(6 * 20));
+							continue;
 						}
-					}
-				}
-				using (new UnityEngine.GUILayout.HorizontalScope())
-				{
-					UnityEngine.GUILayout.Label(@"Tx\Rx", UnityEngine.GUILayout.Width(3 * 20));
-					for (int rx = 0; rx < network_.all_ground_.Length; ++rx)
-					{
 						UnityEngine.GUILayout.Label($"{rx + 1}", UnityEngine.GUILayout.Width(6 * 20));
 					}
 				}
 				for (int tx = 0; tx < network_.all_ground_.Length; ++tx)
 				{
+					if (!network_.tx_.Contains(network_.all_ground_[tx]))
+					{
+						continue;
+					}
 					using (new UnityEngine.GUILayout.HorizontalScope())
 					{
 						UnityEngine.GUILayout.Label($"{tx + 1}", UnityEngine.GUILayout.Width(3 * 20));
 						for (int rx = 0; rx < network_.all_ground_.Length; ++rx)
 						{
+							if (!network_.rx_.Contains(network_.all_ground_[rx]))
+							{
+								continue;
+							}
+							double rate = network_.connections_[tx, rx].current_rate;
+							double rate_availability = network_.connections_[tx, rx].rate_availability;
+							double rate_threshold = network_.connections_[tx, rx].rate_threshold;
 							double latency = network_.connections_[tx, rx].current_latency;
-							double availability = network_.connections_[tx, rx].rate_availability;
-							double threshold = network_.connections_[tx, rx].latency_threshold;
+							double latency_availability = network_.connections_[tx, rx].latency_availability;
+							double latency_threshold = network_.connections_[tx, rx].latency_threshold;
 							UnityEngine.GUILayout.Label(
-								double.IsNaN(latency)
+								double.IsNaN(latency) || double.IsNaN(latency)
 									? "—"
-									: $"{latency * 1000:F0} ms\n{availability:P2} < {threshold * 1000:F0} ms",
+									: $"{RATools.PrettyPrintDataRate(rate)}\n" +
+									  $"{rate_availability:P2} > {RATools.PrettyPrintDataRate(rate_threshold)}\n" +
+									  $"{latency * 1000:F0} ms\n" +
+									  $"{latency_availability:P2} < {latency_threshold * 1000:F0} ms",
 								UnityEngine.GUILayout.Width(6 * 20));
 						}
 					}
@@ -120,8 +110,8 @@ namespace skopos
 						(network_.tx_.Contains(station) ? "T" : "") +
 						(network_.rx_.Contains(station) ? "R" : "") + "x";
 					UnityEngine.GUILayout.Label(
-						$@"{i + 1}: {role} {station.nodeName}; CanTarget={
-							antenna.CanTarget}, Target={antenna.Target?.ToString() ?? "null"}");
+						$@"{i + 1}: {role} {station.nodeName} {
+							(antenna.Target == null ? "Tracking" : "Fixed")}");
 				}
 				foreach (var vessel_time in network_.space_segment_)
 				{
