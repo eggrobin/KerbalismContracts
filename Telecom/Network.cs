@@ -62,17 +62,36 @@ namespace skopos
 					connections_[i, j] = new Connection();
 				}
 			}
-			foreach (var node in template.GetNodes("service_level"))
+			names_ = new string[n];
+			int k = 0;
+			foreach (ConfigNode node in ground_segment_node.GetNodes("station"))
 			{
-				// TODO(egg): tx/rx-specific clauses.
-				for (int i = 0; i < n; i++)
+				names_[k++] = node.GetValue("name");
+			}
+			foreach (ConfigNode node in template.GetNodes("customer"))
+			{
+				names_[k++] = node.GetValue("name");
+			}
+			foreach (var clause in template.GetNodes("service_level"))
+			{
+				string tx_name = clause.GetValue("tx");
+				string rx_name = clause.GetValue("rx");
+				for (int tx = 0; tx < n; tx++)
 				{
-					for (int j = 0; j < n; ++j)
+					if (tx_name != null && tx_name != names_[tx])
 					{
-						connections_[i, j].latency_threshold = double.Parse(node.GetValue("latency"));
-						connections_[i, j].rate_threshold = double.Parse(node.GetValue("rate"));
-						connections_[i, j].target_latency_availability = double.Parse(node.GetValue("latency_availability"));
-						connections_[i, j].target_rate_availability = double.Parse(node.GetValue("rate_availability"));
+						continue;
+					}
+					for (int rx = 0; rx < n; ++rx)
+					{
+						if (rx_name != null && rx_name != names_[rx])
+						{
+							continue;
+						}
+						connections_[tx, rx].latency_threshold = double.Parse(clause.GetValue("latency"));
+						connections_[tx, rx].rate_threshold = double.Parse(clause.GetValue("rate"));
+						connections_[tx, rx].target_latency_availability = double.Parse(clause.GetValue("latency_availability"));
+						connections_[tx, rx].target_rate_availability = double.Parse(clause.GetValue("rate_availability"));
 					}
 				}
 			}
@@ -407,6 +426,7 @@ namespace skopos
 		private readonly string name_;
 		public RACommNetHome[] all_ground_ = {};
 		public Connection[,] connections_ = {};
+		public string[] names_ = {};
 		public double min_rate_;
 		public bool freeze_customers_;
 	}
