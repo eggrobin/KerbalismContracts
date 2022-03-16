@@ -134,6 +134,7 @@ namespace skopos
 			{
 				station.Comm.RAAntennaList[0].Target = null;
 			}
+			CreateGroundSegmentNodesIfNeeded();
 			foreach (var customer in customers_)
 			{
 				customer.Cycle();
