@@ -12,13 +12,51 @@ using System.Threading.Tasks;
 
 namespace skopos {
   class Network {
-    public Network(ConfigNode template) {
-      name_ = template.GetValue("name");
-      var ground_segment_node = template.GetNode("ground_segment");
-      body_ = FlightGlobals.GetBodyByName(ground_segment_node.GetValue("body"));
-      foreach (ConfigNode node in ground_segment_node.GetNodes("station")) {
+    static ConfigNode GetStationDefinition(string name) {
+      foreach (var block in GameDatabase.Instance.GetConfigs("skopos_telecom")) {
+        foreach (var definition in block.config.GetNodes("station")) {
+          if (definition.GetValue("name") == name) {
+            return definition;
+          }
+        }
+      }
+      throw new KeyNotFoundException($"No definition for station {name}");
+    }
+
+    static ConfigNode GetCustomerDefinition(string name) {
+      foreach (var block in GameDatabase.Instance.GetConfigs("skopos_telecom")) {
+        foreach (var definition in block.config.GetNodes("customer")) {
+          if (definition.GetValue("name") == name) {
+            return definition;
+          }
+        }
+      }
+      throw new KeyNotFoundException($"No definition for customer {name}");
+    }
+
+    static ConfigNode GetServiceLevelDefinition(string name) {
+      foreach (var block in GameDatabase.Instance.GetConfigs("skopos_telecom")) {
+        foreach (var definition in block.config.GetNodes("service_level")) {
+          if (definition.GetValue("name") == name) {
+            return definition;
+          }
+        }
+      }
+      throw new KeyNotFoundException($"No definition for service level {name}");
+    }
+
+    static CelestialBody GetConfiguredBody(ConfigNode node) {
+      string body_name = node.GetValue("body");
+      return body_name != null ? FlightGlobals.GetBodyByName(body_name)
+                               : FlightGlobals.GetHomeBody();
+    }
+
+    public Network(ConfigNode network_specification) {
+      foreach (string name in network_specification.GetValues("station")) {
+        var node = GetStationDefinition(name);
+        var body = GetConfiguredBody(node);
         var station =
-          new UnityEngine.GameObject(body_.name).AddComponent<RACommNetHome>();
+          new UnityEngine.GameObject(body.name).AddComponent<RACommNetHome>();
         var station_node = new ConfigNode();
         foreach (string key in new[] { "objectName", "lat", "lon", "alt" }) {
           station_node.AddValue(key, node.GetValue(key));
@@ -29,7 +67,7 @@ namespace skopos {
         foreach (var antenna in node.GetNodes("Antenna")) {
           station_node.AddNode(antenna);
         }
-        station.Configure(station_node, body_);
+        station.Configure(station_node, body);
         ground_segment_.Add(station);
         if (node.GetValue("role") == "tx") {
           tx_.Add(station);
@@ -40,8 +78,8 @@ namespace skopos {
           rx_.Add(station);
         }
       }
-      customers_ = (from customer_template in template.GetNodes("customer")
-                    select new Customer(customer_template, this)).ToArray();
+      customers_ = (from name in network_specification.GetValues("customer")
+                    select new Customer(GetCustomerDefinition(name), this)).ToArray();
       int n = ground_segment_.Count + customers_.Length;
       connections_ = new Connection[n, n];
       for (int i = 0; i < n; i++) {
@@ -51,13 +89,14 @@ namespace skopos {
       }
       names_ = new string[n];
       int k = 0;
-      foreach (ConfigNode node in ground_segment_node.GetNodes("station")) {
-        names_[k++] = node.GetValue("name");
+      foreach (string name in network_specification.GetValues("station")) {
+        names_[k++] = name;
       }
-      foreach (ConfigNode node in template.GetNodes("customer")) {
-        names_[k++] = node.GetValue("name");
+      foreach (string name in network_specification.GetValues("customer")) {
+        names_[k++] = name;
       }
-      foreach (var clause in template.GetNodes("service_level")) {
+      foreach (string name in network_specification.GetValues("service_level")) {
+        ConfigNode clause = GetServiceLevelDefinition(name);
         string tx_name = clause.GetValue("tx");
         string rx_name = clause.GetValue("rx");
         for (int tx = 0; tx < n; tx++) {
@@ -78,17 +117,19 @@ namespace skopos {
     }
 
     public void AddNominalLocation(Vessel v) {
+      // TODO(egg): maybe this could be body-dependent.
       nominal_satellite_locations_.Add(
-        UnityEngine.QuaternionD.Inverse(body_.scaledBody.transform.rotation) *
-          (v.GetWorldPos3D() - body_.position));
+        UnityEngine.QuaternionD.Inverse(FlightGlobals.GetHomeBody().scaledBody.transform.rotation) *
+          (v.GetWorldPos3D() - FlightGlobals.GetHomeBody().position));
       must_retarget_customers_ = true;
     }
 
     public Vector3d[] GetNominalLocationLatLonAlts() {
       var result = new List<Vector3d>(nominal_satellite_locations_.Count);
       foreach (var position in nominal_satellite_locations_) {
-        body_.GetLatLonAlt(
-          body_.scaledBody.transform.rotation * position + body_.position,
+        FlightGlobals.GetHomeBody().GetLatLonAlt(
+          FlightGlobals.GetHomeBody().scaledBody.transform.rotation * position +
+          FlightGlobals.GetHomeBody().position,
           out double lat, out double lon, out double alt);
         result.Add(new Vector3d(lat, lon, alt));
       }
@@ -116,7 +157,7 @@ namespace skopos {
       }
       if (must_retarget_customers_) {
         foreach (var customer in customers_) {
-          Retarget(customer.station);
+          customer.Retarget();
         }
         must_retarget_customers_ = false;
       }
@@ -144,14 +185,14 @@ namespace skopos {
       return site_node;
     }
 
-    private ConfigNode MakeTargetConfig(Vector3d station_world_position) {
+    private ConfigNode MakeTargetConfig(CelestialBody body, Vector3d station_world_position) {
       var config = new ConfigNode(AntennaTarget.nodeName);
       if (nominal_satellite_locations_.Count == 0) {
         return config;
       }
       Vector3d station_position =
-          UnityEngine.QuaternionD.Inverse(body_.scaledBody.transform.rotation) *
-            (station_world_position - body_.position);
+          UnityEngine.QuaternionD.Inverse(body.scaledBody.transform.rotation) *
+            (station_world_position - body.position);
       Vector3d station_zenith = station_position.normalized;
       Vector3d target = default;
       double max_cos_zenithal_angle = double.NegativeInfinity;
@@ -162,18 +203,13 @@ namespace skopos {
           target = position;
         }
       }
-      body_.GetLatLonAlt(
-        body_.scaledBody.transform.rotation * target + body_.position,
+      body.GetLatLonAlt(
+        body.scaledBody.transform.rotation * target + body.position,
         out double lat, out double lon, out double alt);
       config.AddValue("name", $"{AntennaTarget.TargetMode.BodyLatLonAlt}");
       config.AddValue("bodyName", Planetarium.fetch.Home.name);
       config.AddValue("latLonAlt", new Vector3d(lat, lon, alt));
       return config;
-    }
-
-    private void Retarget(RACommNetHome station) {
-      var antenna = station.Comm.RAAntennaList[0];
-      antenna.Target = AntennaTarget.LoadFromConfig(MakeTargetConfig(station.Comm.precisePosition), antenna);
     }
 
     private void UpdateConnections() {
@@ -218,6 +254,7 @@ namespace skopos {
       public Customer(ConfigNode template, Network network) {
         template_ = template;
         network_ = network;
+        body_ = GetConfiguredBody(template_);
       }
 
       public void Cycle() {
@@ -238,6 +275,10 @@ namespace skopos {
           upcoming_station_ = MakeStation();
         }
       }
+      public void Retarget() {
+        var antenna = station.Comm.RAAntennaList[0];
+        antenna.Target = AntennaTarget.LoadFromConfig(network_.MakeTargetConfig(body_, station.Comm.precisePosition), antenna);
+      }
 
       private RACommNetHome MakeStation() {
         HashSet<string> biomes = template_.GetValues("biome").ToHashSet();
@@ -255,25 +296,25 @@ namespace skopos {
           double lon_max = double.Parse(template_.GetValue("lon_max")) * degree;
           lat = Math.Asin(sin_lat_min + network_.random_.NextDouble() * (sin_lat_max - sin_lat_min));
           lon = lon_min + network_.random_.NextDouble() * (lon_max - lon_min);
-        } while (!biomes.Contains(network_.body_.BiomeMap.GetAtt(lat, lon).name));
+        } while (!biomes.Contains(body_.BiomeMap.GetAtt(lat, lon).name));
         var new_station =
-          new UnityEngine.GameObject(network_.body_.name).AddComponent<RACommNetHome>();
+          new UnityEngine.GameObject(body_.name).AddComponent<RACommNetHome>();
         var node = new ConfigNode();
-        node.AddValue("objectName", $"{network_.name_} customer @{lat / degree:F2}, {lon / degree:F2} ({i} tries)");
+        node.AddValue("objectName", $"{template_.GetValue("name")} @{lat / degree:F2}, {lon / degree:F2} ({i} tries)");
         node.AddValue("lat", lat / degree);
         node.AddValue("lon", lon / degree);
-        double alt = network_.body_.TerrainAltitude(lat / degree, lon / degree) + 10;
+        double alt = body_.TerrainAltitude(lat / degree, lon / degree) + 10;
         node.AddValue("alt", alt);
         node.AddValue("isKSC", false);
         node.AddValue("isHome", false);
         node.AddValue("icon", "RealAntennas/DSN");
-        Vector3d station_position = network_.body_.GetWorldSurfacePosition(lat, lon, alt);
+        Vector3d station_position = body_.GetWorldSurfacePosition(lat, lon, alt);
         foreach (var antenna in template_.GetNodes("Antenna")) {
           var targeted_antenna = antenna.CreateCopy();
-          targeted_antenna.AddNode(network_.MakeTargetConfig(station_position));
+          targeted_antenna.AddNode(network_.MakeTargetConfig(body_, station_position));
           node.AddNode(targeted_antenna);
         }
-        new_station.Configure(node, network_.body_);
+        new_station.Configure(node, body_);
         if (template_.GetValue("role") == "tx") {
           network_.tx_.Add(new_station);
         } else if (template_.GetValue("role") == "rx") {
@@ -307,6 +348,7 @@ namespace skopos {
       private SiteNode node_;
 
       private ConfigNode template_;
+      private CelestialBody body_;
       private Network network_;
     }
 
@@ -342,7 +384,6 @@ namespace skopos {
 
     public int customer_pool_size { get; set; }
 
-    private CelestialBody body_;
     private bool active_;
     private readonly Customer[] customers_;
     private readonly List<RACommNetHome> ground_segment_ = new List<RACommNetHome>();
@@ -354,7 +395,6 @@ namespace skopos {
     bool must_retarget_customers_ = false;
     private readonly Random random_ = new Random();
     public readonly List<CommNet.CommLink> active_links_ = new List<CommNet.CommLink>();
-    private readonly string name_;
     public RACommNetHome[] all_ground_ = { };
     public Connection[,] connections_ = { };
     public string[] names_ = { };
