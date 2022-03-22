@@ -11,7 +11,7 @@ using System.Text;
 using System.Threading.Tasks;
 
 namespace skopos {
-  class Network {
+  public class Network {
     static ConfigNode GetStationDefinition(string name) {
       foreach (var block in GameDatabase.Instance.GetConfigs("skopos_telecom")) {
         foreach (var definition in block.config.GetNodes("station")) {
@@ -34,9 +34,9 @@ namespace skopos {
       throw new KeyNotFoundException($"No definition for customer {name}");
     }
 
-    static ConfigNode GetServiceLevelDefinition(string name) {
+    static ConfigNode GetMonitoredConnectionDefinition(string name) {
       foreach (var block in GameDatabase.Instance.GetConfigs("skopos_telecom")) {
-        foreach (var definition in block.config.GetNodes("service_level")) {
+        foreach (var definition in block.config.GetNodes("monitored_connection")) {
           if (definition.GetValue("name") == name) {
             return definition;
           }
@@ -95,8 +95,8 @@ namespace skopos {
       foreach (string name in network_specification.GetValues("customer")) {
         names_[k++] = name;
       }
-      foreach (string name in network_specification.GetValues("service_level")) {
-        ConfigNode clause = GetServiceLevelDefinition(name);
+      foreach (string name in network_specification.GetValues("monitored_connection")) {
+        ConfigNode clause = GetMonitoredConnectionDefinition(name);
         string tx_name = clause.GetValue("tx");
         string rx_name = clause.GetValue("rx");
         for (int tx = 0; tx < n; tx++) {
@@ -115,6 +115,13 @@ namespace skopos {
         }
       }
     }
+
+    public void AddStations(string[] names) { }
+    public void AddCustomers(string[] names) { }
+    public void AddMonitoredConnections(string[] names) { }
+    public void RemoveStations(string[] names) { }
+    public void RemoveCustomers(string[] names) { }
+    public void RemoveMonitoredConnections(string[] names) { }
 
     public void AddNominalLocation(Vessel v) {
       // TODO(egg): maybe this could be body-dependent.
@@ -384,7 +391,6 @@ namespace skopos {
 
     public int customer_pool_size { get; set; }
 
-    private bool active_;
     private readonly Customer[] customers_;
     private readonly List<RACommNetHome> ground_segment_ = new List<RACommNetHome>();
     private List<SiteNode> ground_segment_nodes_;

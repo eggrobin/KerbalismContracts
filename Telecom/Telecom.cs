@@ -13,64 +13,69 @@ namespace skopos {
     ScenarioCreationOptions.AddToAllGames,
     new[] { GameScenes.SPACECENTER, GameScenes.TRACKSTATION, GameScenes.FLIGHT })]
   public sealed class Telecom : ScenarioModule {
+
+    public Telecom() {
+      Instance = this;
+    }
+
     private void OnGUI() {
       window_ = UnityEngine.GUILayout.Window(
         GetHashCode(), window_, DrawWindow, "Skopos Telecom");
     }
 
     private void FixedUpdate() {
-      if (network_ == null) {
-        network_ = new Network(GameDatabase.Instance.GetConfigs("skopos_telecom")[0].config);
+      if (network == null) {
+        network = new Network(GameDatabase.Instance.GetConfigs("skopos_telecom")[0].config);
       }
-      network_.Refresh();
+      network.Refresh();
     }
 
     private void DrawWindow(int id) {
       using (new UnityEngine.GUILayout.VerticalScope()) {
         using (new UnityEngine.GUILayout.HorizontalScope()) {
           if (UnityEngine.GUILayout.Button("Add nominal location") && FlightGlobals.ActiveVessel != null) {
-            network_.AddNominalLocation(FlightGlobals.ActiveVessel);
+            network.AddNominalLocation(FlightGlobals.ActiveVessel);
             return;
           }
           if (UnityEngine.GUILayout.Button("Clear nominal locations")) {
-            network_.ClearNominalLocations();
+            network.ClearNominalLocations();
             return;
           }
-          network_.freeze_customers_ = UnityEngine.GUILayout.Toggle(network_.freeze_customers_, "Freeze customers");
+          network.freeze_customers_ = UnityEngine.GUILayout.Toggle(network.freeze_customers_, "Freeze customers");
         }
-        foreach (Vector3d location in network_.GetNominalLocationLatLonAlts()) {
+        foreach (Vector3d location in network.GetNominalLocationLatLonAlts()) {
           UnityEngine.GUILayout.Label($"{location.x:F2}°, {location.y:F2}°, {location.z / 1000:F0} km");
         }
         using (new UnityEngine.GUILayout.HorizontalScope()) {
-          if (int.TryParse(UnityEngine.GUILayout.TextField(network_.customer_pool_size.ToString()), out int pool_size)) {
-            network_.customer_pool_size = Math.Max(pool_size, 0);
+          if (int.TryParse(UnityEngine.GUILayout.TextField(network.customer_pool_size.ToString()), out int pool_size)) {
+            network.customer_pool_size = Math.Max(pool_size, 0);
           }
         }
         using (new UnityEngine.GUILayout.HorizontalScope()) {
           UnityEngine.GUILayout.Label(@"Tx\Rx", UnityEngine.GUILayout.Width(3 * 20));
-          for (int rx = 0; rx < network_.all_ground_.Length; ++rx) {
-            if (!network_.rx_.Contains(network_.all_ground_[rx])) {
+          for (int rx = 0; rx < network.all_ground_.Length; ++rx) {
+            if (!network.rx_.Contains(network.all_ground_[rx])) {
               continue;
             }
             UnityEngine.GUILayout.Label($"{rx + 1}", UnityEngine.GUILayout.Width(6 * 20));
           }
         }
-        for (int tx = 0; tx < network_.all_ground_.Length; ++tx) {
-          if (!network_.tx_.Contains(network_.all_ground_[tx])) {
+        for (int tx = 0; tx < network.all_ground_.Length; ++tx) {
+          if (!network.tx_.Contains(network.all_ground_[tx])) {
             continue;
           }
           using (new UnityEngine.GUILayout.HorizontalScope()) {
             UnityEngine.GUILayout.Label($"{tx + 1}", UnityEngine.GUILayout.Width(3 * 20));
-            for (int rx = 0; rx < network_.all_ground_.Length; ++rx) {
-              if (!network_.rx_.Contains(network_.all_ground_[rx])) {
+            for (int rx = 0; rx < network.all_ground_.Length; ++rx) {
+              if (!network.rx_.Contains(network.all_ground_[rx])) {
                 continue;
               }
-              double rate = network_.connections_[tx, rx].current_rate;
-              double rate_availability = network_.connections_[tx, rx].rate_availability;
-              double rate_threshold = network_.connections_[tx, rx].rate_threshold;
-              double latency = network_.connections_[tx, rx].current_latency;
-              double latency_availability = network_.connections_[tx, rx].latency_availability;
-              double latency_threshold = network_.connections_[tx, rx].latency_threshold;
+              double rate = network.connections_[tx, rx].current_rate;
+              double rate_availability = network.connections_[tx, rx].rate_availability;
+              double rate_threshold = network.connections_[tx, rx].rate_threshold;
+              double latency = network.connections_[tx, rx].current_latency;
+              double latency_availability = network.connections_[tx, rx].latency_availability;
+              double latency_threshold = network.connections_[tx, rx].latency_threshold;
               UnityEngine.GUILayout.Label(
                 double.IsNaN(latency) || double.IsNaN(latency)
                   ? "—"
@@ -82,17 +87,17 @@ namespace skopos {
             }
           }
         }
-        for (int i = 0; i < network_.all_ground_.Length; ++i) {
-          var station = network_.all_ground_[i];
+        for (int i = 0; i < network.all_ground_.Length; ++i) {
+          var station = network.all_ground_[i];
           var antenna = station.Comm.RAAntennaList[0];
           string role =
-            (network_.tx_.Contains(station) ? "T" : "") +
-            (network_.rx_.Contains(station) ? "R" : "") + "x";
+            (network.tx_.Contains(station) ? "T" : "") +
+            (network.rx_.Contains(station) ? "R" : "") + "x";
           UnityEngine.GUILayout.Label(
             $@"{i + 1}: {role} {station.nodeName} {
               (antenna.Target == null ? "Tracking" : "Fixed")}");
         }
-        foreach (var vessel_time in network_.space_segment_) {
+        foreach (var vessel_time in network.space_segment_) {
           double age_s = Planetarium.GetUniversalTime() - vessel_time.Value;
           string age = null;
           if (age_s > 2 * KSPUtil.dateTimeFormatter.Day) {
@@ -108,7 +113,7 @@ namespace skopos {
             UnityEngine.GUILayout.Label($"{vessel_time.Key.name} {age}");
             if (age != null &&
               UnityEngine.GUILayout.Button("Remove", UnityEngine.GUILayout.Width(4 * 20))) {
-              network_.space_segment_.Remove(vessel_time.Key);
+              network.space_segment_.Remove(vessel_time.Key);
               return;
             }
           }
@@ -127,22 +132,22 @@ namespace skopos {
       if (ui == null) {
         return;
       }
-      foreach (var station in network_.all_ground_) {
+      foreach (var station in network.all_ground_) {
         ui.OverrideShownCones.Add(station.Comm);
       }
-      foreach (var satellite in network_.space_segment_.Keys) {
+      foreach (var satellite in network.space_segment_.Keys) {
         ui.OverrideShownCones.Add(satellite.Connection.Comm as RACommNode);
       }
       if (show_active_links_) {
-        ui.OverrideShownLinks.AddRange(network_.active_links_);
+        ui.OverrideShownLinks.AddRange(network.active_links_);
       } else {
-        foreach (var station in network_.all_ground_) {
+        foreach (var station in network.all_ground_) {
           ui.OverrideShownLinks.AddRange(station.Comm.Values);
         }
-        foreach (var satellite in network_.space_segment_.Keys) {
+        foreach (var satellite in network.space_segment_.Keys) {
           foreach (var link in satellite.Connection.Comm.Values) {
             Vessel vessel = (link.b as RACommNode).ParentVessel;
-            if (vessel != null && network_.space_segment_.ContainsKey(vessel)) {
+            if (vessel != null && network.space_segment_.ContainsKey(vessel)) {
               ui.OverrideShownLinks.Add(link);
             }
           }
@@ -150,7 +155,10 @@ namespace skopos {
       }
     }
 
-    private Network network_;
+
+    public static Telecom Instance { get; private set; }
+
+    public Network network { get; private set; }
     private bool show_network_ = true;
     private bool show_active_links_ = true;
     private UnityEngine.Rect window_;
