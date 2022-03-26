@@ -34,9 +34,9 @@ namespace skopos {
       throw new KeyNotFoundException($"No definition for customer {name}");
     }
 
-    static ConfigNode GetMonitoredConnectionDefinition(string name) {
+    static ConfigNode GetConnectionMonitorDefinition(string name) {
       foreach (var block in GameDatabase.Instance.GetConfigs("skopos_telecom")) {
-        foreach (var definition in block.config.GetNodes("monitored_connection")) {
+        foreach (var definition in block.config.GetNodes("connection_monitor")) {
           if (definition.GetValue("name") == name) {
             return definition;
           }
@@ -52,7 +52,39 @@ namespace skopos {
     }
 
     public Network(ConfigNode network_specification) {
-      foreach (string name in network_specification.GetValues("station")) {
+      AddStations(network_specification.GetValues("station"));
+      AddCustomers(network_specification.GetValues("customer"));
+      AddConnectionMonitors(network_specification.GetValues("connection_monitor"));
+    }
+
+    private void RebuildConnections() {
+      int n = stations_.Count + customers_.Count;
+      connections_ = new Connection[n, n];
+      for (int i = 0; i < n; i++) {
+        for (int j = 0; j < n; ++j) {
+          connections_[i, j] = new Connection();
+        }
+      }
+      names_ = new string[n];
+      int k = 0;
+      foreach (string name in stations_.Keys) {
+        names_[k++] = name;
+      }
+      foreach (string name in customers_.Keys) {
+        names_[k++] = name;
+      }
+      foreach (var monitor in connection_monitors_.Values) {
+        int tx = names_.IndexOf(monitor.tx_name);
+        int rx = names_.IndexOf(monitor.tx_name);
+        connections_[tx, rx].monitors_.Add(monitor);
+      }
+    }
+
+    public void AddStations(string[] names) {
+      foreach (var name in names) {
+        if (stations_.ContainsKey(name)) {
+          continue;
+        }
         var node = GetStationDefinition(name);
         var body = GetConfiguredBody(node);
         var station =
@@ -68,7 +100,7 @@ namespace skopos {
           station_node.AddNode(antenna);
         }
         station.Configure(station_node, body);
-        ground_segment_.Add(station);
+        stations_.Add(name, station);
         if (node.GetValue("role") == "tx") {
           tx_.Add(station);
         } else if (node.GetValue("role") == "rx") {
@@ -78,50 +110,30 @@ namespace skopos {
           rx_.Add(station);
         }
       }
-      customers_ = (from name in network_specification.GetValues("customer")
-                    select new Customer(GetCustomerDefinition(name), this)).ToArray();
-      int n = ground_segment_.Count + customers_.Length;
-      connections_ = new Connection[n, n];
-      for (int i = 0; i < n; i++) {
-        for (int j = 0; j < n; ++j) {
-          connections_[i, j] = new Connection();
+      connections_ = null;
+    }
+    public void AddCustomers(string[] names) {
+      foreach (var name in names) {
+        if (customers_.ContainsKey(name)) {
+          continue;
         }
+        customers_.Add(name, new Customer(GetCustomerDefinition(name), this));
       }
-      names_ = new string[n];
-      int k = 0;
-      foreach (string name in network_specification.GetValues("station")) {
-        names_[k++] = name;
-      }
-      foreach (string name in network_specification.GetValues("customer")) {
-        names_[k++] = name;
-      }
-      foreach (string name in network_specification.GetValues("monitored_connection")) {
-        ConfigNode clause = GetMonitoredConnectionDefinition(name);
-        string tx_name = clause.GetValue("tx");
-        string rx_name = clause.GetValue("rx");
-        for (int tx = 0; tx < n; tx++) {
-          if (tx_name != null && tx_name != names_[tx]) {
-            continue;
-          }
-          for (int rx = 0; rx < n; ++rx) {
-            if (rx_name != null && rx_name != names_[rx]) {
-              continue;
-            }
-            connections_[tx, rx].latency_threshold = double.Parse(clause.GetValue("latency"));
-            connections_[tx, rx].rate_threshold = double.Parse(clause.GetValue("rate"));
-            connections_[tx, rx].target_latency_availability = double.Parse(clause.GetValue("latency_availability"));
-            connections_[tx, rx].target_rate_availability = double.Parse(clause.GetValue("rate_availability"));
-          }
+      connections_ = null;
+    }
+    public void AddConnectionMonitors(string[] names) {
+      foreach (var name in names) {
+        if (connection_monitors_.ContainsKey(name)) {
+          continue;
         }
+        connection_monitors_.Add(name, new ConnectionMonitor(GetConnectionMonitorDefinition(name)));
       }
+      connections_ = null;
     }
 
-    public void AddStations(string[] names) { }
-    public void AddCustomers(string[] names) { }
-    public void AddMonitoredConnections(string[] names) { }
     public void RemoveStations(string[] names) { }
     public void RemoveCustomers(string[] names) { }
-    public void RemoveMonitoredConnections(string[] names) { }
+    public void RemoveConnectionMonitors(string[] names) { }
 
     public void AddNominalLocation(Vessel v) {
       // TODO(egg): maybe this could be body-dependent.
@@ -149,21 +161,24 @@ namespace skopos {
     }
 
     public void Refresh() {
-      if (ground_segment_.Any(station => station.Comm == null)) {
+      if (connections_ == null) {
+        RebuildConnections();
+      }
+      if (stations_.Values.Any(station => station.Comm == null)) {
         return;
       }
-      foreach (var station in ground_segment_) {
+      foreach (var station in stations_.Values) {
         station.Comm.RAAntennaList[0].Target = null;
       }
       CreateGroundSegmentNodesIfNeeded();
-      foreach (var customer in customers_) {
+      foreach (var customer in customers_.Values) {
         customer.Cycle();
       }
-      if (customers_.Any(customer => customer.station == null)) {
+      if (customers_.Values.Any(customer => customer.station == null)) {
         return;
       }
       if (must_retarget_customers_) {
-        foreach (var customer in customers_) {
+        foreach (var customer in customers_.Values) {
           customer.Retarget();
         }
         must_retarget_customers_ = false;
@@ -172,9 +187,10 @@ namespace skopos {
     }
 
     private void CreateGroundSegmentNodesIfNeeded() {
+      // TODO(egg): Rewrite taking mutability into account.
       if (ground_segment_nodes_ == null && MapView.fetch != null) {
         ground_segment_nodes_ = new List<SiteNode>();
-        foreach (var station in ground_segment_) {
+        foreach (var station in stations_.Values) {
           ground_segment_nodes_.Add(MakeSiteNode(station));
         }
       }
@@ -225,7 +241,7 @@ namespace skopos {
         UnityEngine.Debug.LogError("No RA comm network");
         return;
       }
-      all_ground_ = ground_segment_.Concat(from customer in customers_ select customer.station).ToArray();
+      all_ground_ = stations_.Values.Concat(from customer in customers_.Values select customer.station).ToArray();
       min_rate_ = double.PositiveInfinity;
       active_links_.Clear();
       for (int tx = 0; tx < all_ground_.Length; ++tx) {
@@ -359,40 +375,63 @@ namespace skopos {
       private Network network_;
     }
 
+    public class ConnectionMonitor {
+      public ConnectionMonitor(ConfigNode node) {
+        tx_name = node.GetValue("tx");
+        rx_name = node.GetValue("rx");
+        latency_threshold = double.Parse(node.GetValue("latency"));
+        rate_threshold = double.Parse(node.GetValue("rate"));
+      }
+
+        public void AddMeasurement(double latency, double rate, double Δt) {
+        if (latency <= latency_threshold) {
+          time_below_latency_threshold_ += Δt;
+        }
+        if (rate >= rate_threshold) {
+          time_above_rate_threshold_ += Δt;
+        }
+        total_measurement_time_ += Δt;
+      }
+      public double latency_threshold { get; }
+      public double rate_threshold { get; }
+      public double latency_availability => time_below_latency_threshold_ / total_measurement_time_;
+      public double rate_availability => time_above_rate_threshold_ / total_measurement_time_;
+
+      public string tx_name { get; }
+      public string rx_name { get; }
+
+      // TODO(egg): Save these.
+      private double time_below_latency_threshold_;
+      private double time_above_rate_threshold_;
+      private double total_measurement_time_;
+    }
+
     public class Connection {
       public void AddMeasurement(double latency, double rate) {
         if (last_measurement_time_ != null) {
           double Δt = Planetarium.GetUniversalTime() - last_measurement_time_.Value;
           current_latency = latency;
           current_rate = rate;
-          if (latency <= latency_threshold) {
-            time_below_latency_threshold_ += Δt;
+          foreach (var monitor in monitors_) {
+            monitor.AddMeasurement(latency, rate, Δt);
           }
-          if (rate >= rate_threshold) {
-            time_above_rate_threshold_ += Δt;
-          }
-          total_measurement_time_ += Δt;
         }
         last_measurement_time_ = Planetarium.GetUniversalTime();
       }
       public double current_latency { get; private set; }
       public double current_rate { get; private set; }
-      public double latency_threshold { get; set; }
-      public double rate_threshold { get; set; }
-      public double target_latency_availability { get; set; }
-      public double target_rate_availability { get; set; }
-      public double latency_availability => time_below_latency_threshold_ / total_measurement_time_;
-      public double rate_availability => time_above_rate_threshold_ / total_measurement_time_;
-      private double time_below_latency_threshold_;
-      private double time_above_rate_threshold_;
-      private double total_measurement_time_;
+      public List<ConnectionMonitor> monitors_ = new List<ConnectionMonitor>();
       private double? last_measurement_time_;
     }
 
     public int customer_pool_size { get; set; }
 
-    private readonly Customer[] customers_;
-    private readonly List<RACommNetHome> ground_segment_ = new List<RACommNetHome>();
+    private readonly SortedDictionary<string, Customer> customers_ =
+        new SortedDictionary<string, Customer>();
+    private readonly SortedDictionary<string, RACommNetHome> stations_ =
+        new SortedDictionary<string, RACommNetHome>();
+    private readonly SortedDictionary<string, ConnectionMonitor> connection_monitors_ =
+        new SortedDictionary<string, ConnectionMonitor>();
     private List<SiteNode> ground_segment_nodes_;
     public readonly HashSet<RACommNetHome> tx_ = new HashSet<RACommNetHome>();
     public readonly HashSet<RACommNetHome> rx_ = new HashSet<RACommNetHome>();

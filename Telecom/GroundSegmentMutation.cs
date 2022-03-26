@@ -12,20 +12,20 @@ namespace skopos {
       var ok = base.Load(node);
       stations_ = node.GetValues("station");
       customers_ = node.GetValues("customer");
-      monitored_connections_ = node.GetValues("monitored_connection");
+      connection_monitors_ = node.GetValues("connection_monitor");
       Enum.TryParse(node.GetNode("condition").GetValue("state"), out state_);
       parameters_ = node.GetNode("condition").GetValues("parameter");
       return ok;
     }
     public override ContractBehaviour Generate(ConfiguredContract contract) {
-      return new GroundSegmentMutation(Operation(), stations_, customers_, monitored_connections_, state_, parameters_);
+      return new GroundSegmentMutation(Operation(), stations_, customers_, connection_monitors_, state_, parameters_);
     }
 
     protected abstract GroundSegmentMutation.Operation Operation();
 
     private string[] stations_;
     private string[] customers_;
-    private string[] monitored_connections_;
+    private string[] connection_monitors_;
     private string[] parameters_;
     private TriggeredBehaviour.State state_;
   }
@@ -50,30 +50,30 @@ namespace skopos {
     private Operation operation_;
     private string[] stations_;
     private string[] customers_;
-    private string[] monitored_connections_;
+    private string[] connection_monitors_;
 
     public GroundSegmentMutation(Operation operation,
                                  string[] stations,
                                  string[] customers,
-                                 string[] monitored_connections,
+                                 string[] connection_monitors,
                                  State state,
                                  string[] parameters) 
       : base(state, parameters.ToList()) {
       operation_ = operation;
       stations_ = stations;
       customers_ = customers;
-      monitored_connections_ = monitored_connections;
+      connection_monitors_ = connection_monitors;
     }
 
     protected override void TriggerAction() {
       if (operation_ == GroundSegmentMutation.Operation.ADD) {
         Telecom.Instance.network.AddStations(stations_);
         Telecom.Instance.network.AddCustomers(customers_);
-        Telecom.Instance.network.AddMonitoredConnections(monitored_connections_);
+        Telecom.Instance.network.AddMonitoredConnections(connection_monitors_);
       } else {
         Telecom.Instance.network.RemoveStations(stations_);
         Telecom.Instance.network.RemoveCustomers(customers_);
-        Telecom.Instance.network.RemoveMonitoredConnections(monitored_connections_);
+        Telecom.Instance.network.RemoveMonitoredConnections(connection_monitors_);
       }
     }
   }
