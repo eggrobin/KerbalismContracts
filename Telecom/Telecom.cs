@@ -71,18 +71,12 @@ namespace skopos {
                 continue;
               }
               double rate = network.connections_[tx, rx].current_rate;
-              double rate_availability = network.connections_[tx, rx].rate_availability;
-              double rate_threshold = network.connections_[tx, rx].rate_threshold;
               double latency = network.connections_[tx, rx].current_latency;
-              double latency_availability = network.connections_[tx, rx].latency_availability;
-              double latency_threshold = network.connections_[tx, rx].latency_threshold;
               UnityEngine.GUILayout.Label(
                 double.IsNaN(latency) || double.IsNaN(latency)
                   ? "—"
                   : $"{RATools.PrettyPrintDataRate(rate)}\n" +
-                    $"{rate_availability:P2} > {RATools.PrettyPrintDataRate(rate_threshold)}\n" +
                     $"{latency * 1000:F0} ms\n" +
-                    $"{latency_availability:P2} < {latency_threshold * 1000:F0} ms",
                 UnityEngine.GUILayout.Width(6 * 20));
             }
           }

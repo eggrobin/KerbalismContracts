@@ -69,11 +69,11 @@ namespace skopos {
       if (operation_ == GroundSegmentMutation.Operation.ADD) {
         Telecom.Instance.network.AddStations(stations_);
         Telecom.Instance.network.AddCustomers(customers_);
-        Telecom.Instance.network.AddMonitoredConnections(connection_monitors_);
+        Telecom.Instance.network.AddConnectionMonitors(connection_monitors_);
       } else {
         Telecom.Instance.network.RemoveStations(stations_);
         Telecom.Instance.network.RemoveCustomers(customers_);
-        Telecom.Instance.network.RemoveMonitoredConnections(connection_monitors_);
+        Telecom.Instance.network.RemoveConnectionMonitors(connection_monitors_);
       }
     }
   }
