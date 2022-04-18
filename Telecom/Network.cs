@@ -273,6 +273,10 @@ namespace skopos {
       }
     }
 
+    public ConnectionMonitor Monitor(string name) {
+      return connection_monitors_[name];
+    }
+
     private class Customer {
       public Customer(ConfigNode template, Network network) {
         template_ = template;
@@ -384,25 +388,20 @@ namespace skopos {
       }
 
         public void AddMeasurement(double latency, double rate, double Δt) {
-        if (latency <= latency_threshold) {
-          time_below_latency_threshold_ += Δt;
-        }
-        if (rate >= rate_threshold) {
-          time_above_rate_threshold_ += Δt;
+        if (latency <= latency_threshold || rate >= rate_threshold) {
+          time_within_sla_ += Δt;
         }
         total_measurement_time_ += Δt;
       }
       public double latency_threshold { get; }
       public double rate_threshold { get; }
-      public double latency_availability => time_below_latency_threshold_ / total_measurement_time_;
-      public double rate_availability => time_above_rate_threshold_ / total_measurement_time_;
+      public double availability => time_within_sla_ / total_measurement_time_;
 
       public string tx_name { get; }
       public string rx_name { get; }
 
       // TODO(egg): Save these.
-      private double time_below_latency_threshold_;
-      private double time_above_rate_threshold_;
+      private double time_within_sla_;
       private double total_measurement_time_;
     }
 

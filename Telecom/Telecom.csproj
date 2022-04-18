@@ -60,6 +60,7 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="ConnectionAvailability.cs" />
     <Compile Include="GroundSegmentMutation.cs" />
     <Compile Include="Network.cs" />
     <Compile Include="Telecom.cs" />
