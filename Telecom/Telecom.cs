@@ -18,6 +18,14 @@ namespace skopos {
       Instance = this;
     }
 
+    public override void OnLoad(ConfigNode node) {
+      base.OnLoad(node);
+    }
+
+    public override void OnSave(ConfigNode node) {
+      base.OnSave(node);
+    }
+
     private void OnGUI() {
       window_ = UnityEngine.GUILayout.Window(
         GetHashCode(), window_, DrawWindow, "Skopos Telecom");

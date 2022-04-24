@@ -10,8 +10,8 @@ namespace skopos {
   public class ConnectionAvailabilityFactory : ParameterFactory {
     public override bool Load(ConfigNode node) {
       var ok = base.Load(node);
-      connection_ = node.GetValue("connection");
-      availability_ = double.Parse(node.GetValue("availability"));
+      ok &= ConfigNodeUtil.ParseValue<string>(node, "connection", x => connection_ = x, this);
+      ok &= ConfigNodeUtil.ParseValue<double>(node, "availability", x => availability_ = x, this);
       return ok;
     }
     public override ContractParameter Generate(Contract contract) {

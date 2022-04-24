@@ -8,13 +8,15 @@ using ContractConfigurator.Behaviour;
 
 namespace skopos {
   public abstract class GroundSegmentMutationFactory : BehaviourFactory {
+    private static readonly List<string> empty_ = new List<string>();
     public override bool Load(ConfigNode node) {
       var ok = base.Load(node);
-      stations_ = node.GetValues("station");
-      customers_ = node.GetValues("customer");
-      connection_monitors_ = node.GetValues("connection_monitor");
-      Enum.TryParse(node.GetNode("condition").GetValue("state"), out state_);
-      parameters_ = node.GetNode("condition").GetValues("parameter");
+      ok &= ConfigNodeUtil.ParseValue(node, "station", x => stations_ = x, this, empty_);
+      ok &= ConfigNodeUtil.ParseValue(node, "customer", x => customers_ = x, this, empty_);
+      ok &= ConfigNodeUtil.ParseValue(node, "connection_monitor", x => connection_monitors_ = x, this, empty_);
+      var condition = ConfigNodeUtil.GetChildNode(node, "condition");
+      ok &= ConfigNodeUtil.ParseValue<TriggeredBehaviour.State>(condition, "state", x => state_ = x, this);
+      ok &= ConfigNodeUtil.ParseValue(condition, "parameter", x => parameters_ = x, this, empty_);
       return ok;
     }
     public override ContractBehaviour Generate(ConfiguredContract contract) {
@@ -23,10 +25,10 @@ namespace skopos {
 
     protected abstract GroundSegmentMutation.Operation Operation();
 
-    private string[] stations_;
-    private string[] customers_;
-    private string[] connection_monitors_;
-    private string[] parameters_;
+    private List<string> stations_;
+    private List<string> customers_;
+    private List<string> connection_monitors_;
+    private List<string> parameters_;
     private TriggeredBehaviour.State state_;
   }
 
@@ -48,16 +50,16 @@ namespace skopos {
     }
 
     private Operation operation_;
-    private string[] stations_;
-    private string[] customers_;
-    private string[] connection_monitors_;
+    private List<string> stations_;
+    private List<string> customers_;
+    private List<string> connection_monitors_;
 
     public GroundSegmentMutation(Operation operation,
-                                 string[] stations,
-                                 string[] customers,
-                                 string[] connection_monitors,
+                                 List<string> stations,
+                                 List<string> customers,
+                                 List<string> connection_monitors,
                                  State state,
-                                 string[] parameters) 
+                                 List<string> parameters) 
       : base(state, parameters.ToList()) {
       operation_ = operation;
       stations_ = stations;
@@ -66,7 +68,7 @@ namespace skopos {
     }
 
     protected override void TriggerAction() {
-      if (operation_ == GroundSegmentMutation.Operation.ADD) {
+      if (operation_ == Operation.ADD) {
         Telecom.Instance.network.AddStations(stations_);
         Telecom.Instance.network.AddCustomers(customers_);
         Telecom.Instance.network.AddConnectionMonitors(connection_monitors_);

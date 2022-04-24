@@ -7,11 +7,19 @@ using RealAntennas.Targeting;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
 
 namespace skopos {
   public class Network {
+
+    static void Log(string message,
+                    [CallerFilePath] string file = "",
+                    [CallerLineNumber] int line = 0) {
+      UnityEngine.Debug.Log($"[Σκοπος Telecom]: {message} ({file}:{line})");
+    }
+
     static ConfigNode GetStationDefinition(string name) {
       foreach (var block in GameDatabase.Instance.GetConfigs("skopos_telecom")) {
         foreach (var definition in block.config.GetNodes("station")) {
@@ -80,11 +88,13 @@ namespace skopos {
       }
     }
 
-    public void AddStations(string[] names) {
+    public void AddStations(IEnumerable<string> names) {
       foreach (var name in names) {
         if (stations_.ContainsKey(name)) {
+          Log($"Station {name} already present");
           continue;
         }
+        Log($"Adding station {name}");
         var node = GetStationDefinition(name);
         var body = GetConfiguredBody(node);
         var station =
@@ -112,28 +122,32 @@ namespace skopos {
       }
       connections_ = null;
     }
-    public void AddCustomers(string[] names) {
+    public void AddCustomers(IEnumerable<string> names) {
       foreach (var name in names) {
         if (customers_.ContainsKey(name)) {
+          Log($"Customer {name} already present");
           continue;
         }
+        Log($"Adding customer {name}");
         customers_.Add(name, new Customer(GetCustomerDefinition(name), this));
       }
       connections_ = null;
     }
-    public void AddConnectionMonitors(string[] names) {
+    public void AddConnectionMonitors(IEnumerable<string> names) {
       foreach (var name in names) {
         if (connection_monitors_.ContainsKey(name)) {
+          Log($"Connection {name} already present");
           continue;
         }
+        Log($"Adding connection {name}");
         connection_monitors_.Add(name, new ConnectionMonitor(GetConnectionMonitorDefinition(name)));
       }
       connections_ = null;
     }
 
-    public void RemoveStations(string[] names) { }
-    public void RemoveCustomers(string[] names) { }
-    public void RemoveConnectionMonitors(string[] names) { }
+    public void RemoveStations(IEnumerable<string> names) { }
+    public void RemoveCustomers(IEnumerable<string> names) { }
+    public void RemoveConnectionMonitors(IEnumerable<string> names) { }
 
     public void AddNominalLocation(Vessel v) {
       // TODO(egg): maybe this could be body-dependent.
@@ -238,7 +252,7 @@ namespace skopos {
     private void UpdateConnections() {
       var network = CommNet.CommNetNetwork.Instance.CommNet as RACommNetwork;
       if (network == null) {
-        UnityEngine.Debug.LogError("No RA comm network");
+        Log("No RA comm network");
         return;
       }
       all_ground_ = stations_.Values.Concat(from customer in customers_.Values select customer.station).ToArray();
