@@ -22,6 +22,8 @@ namespace skopos {
   }
 
   public class ConnectionAvailability : ContractParameter {
+    public ConnectionAvailability() {}
+
     public ConnectionAvailability(string connection, double availability) {
       connection_ = connection;
       availability_ = availability;
@@ -35,6 +37,16 @@ namespace skopos {
       } else {
         SetIncomplete();
       }
+    }
+
+    protected override void OnLoad(ConfigNode node) {
+      connection_ = node.GetValue("connection");
+      availability_ = double.Parse(node.GetValue("availability"));
+    }
+
+    protected override void OnSave(ConfigNode node) {
+      node.AddValue("connection", connection_);
+      node.AddValue("availability", availability_);
     }
 
     private string connection_;

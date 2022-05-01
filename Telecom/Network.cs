@@ -42,9 +42,9 @@ namespace skopos {
       throw new KeyNotFoundException($"No definition for customer {name}");
     }
 
-    static ConfigNode GetConnectionMonitorDefinition(string name) {
+    static ConfigNode GetConnectionDefinition(string name) {
       foreach (var block in GameDatabase.Instance.GetConfigs("skopos_telecom")) {
-        foreach (var definition in block.config.GetNodes("connection_monitor")) {
+        foreach (var definition in block.config.GetNodes("connection")) {
           if (definition.GetValue("name") == name) {
             return definition;
           }
@@ -60,17 +60,32 @@ namespace skopos {
     }
 
     public Network(ConfigNode network_specification) {
+      if (network_specification == null) {
+        return;
+      }
       AddStations(network_specification.GetValues("station"));
       AddCustomers(network_specification.GetValues("customer"));
-      AddConnectionMonitors(network_specification.GetValues("connection_monitor"));
+      AddConnections(network_specification.GetValues("connection"));
     }
 
-    private void RebuildConnections() {
+    public void Serialize(ConfigNode node) {
+      foreach (string station in stations_.Keys) {
+        node.AddValue("station", station);
+      }
+      foreach (string customer in customers_.Keys) {
+        node.AddValue("customer", customer);
+      }
+      foreach (string connection in connections_.Keys) {
+        node.AddValue("connection", connection);
+      }
+    }
+
+    private void RebuildGraph() {
       int n = stations_.Count + customers_.Count;
-      connections_ = new Connection[n, n];
+      connection_graph_ = new Edge[n, n];
       for (int i = 0; i < n; i++) {
         for (int j = 0; j < n; ++j) {
-          connections_[i, j] = new Connection();
+          connection_graph_[i, j] = new Edge();
         }
       }
       names_ = new string[n];
@@ -81,10 +96,10 @@ namespace skopos {
       foreach (string name in customers_.Keys) {
         names_[k++] = name;
       }
-      foreach (var monitor in connection_monitors_.Values) {
-        int tx = names_.IndexOf(monitor.tx_name);
-        int rx = names_.IndexOf(monitor.tx_name);
-        connections_[tx, rx].monitors_.Add(monitor);
+      foreach (var connection in connections_.Values) {
+        int tx = names_.IndexOf(connection.tx_name);
+        int rx = names_.IndexOf(connection.tx_name);
+        connection_graph_[tx, rx].monitors_.Add(connection);
       }
     }
 
@@ -95,34 +110,40 @@ namespace skopos {
           continue;
         }
         Log($"Adding station {name}");
-        var node = GetStationDefinition(name);
-        var body = GetConfiguredBody(node);
-        var station =
-          new UnityEngine.GameObject(body.name).AddComponent<RACommNetHome>();
-        var station_node = new ConfigNode();
-        foreach (string key in new[] { "objectName", "lat", "lon", "alt" }) {
-          station_node.AddValue(key, node.GetValue(key));
-        }
-        station_node.AddValue("isKSC", false);
-        station_node.AddValue("isHome", false);
-        station_node.AddValue("icon", "RealAntennas/radio-antenna");
-        foreach (var antenna in node.GetNodes("Antenna")) {
-          station_node.AddNode(antenna);
-        }
-        station.Configure(station_node, body);
-        stations_.Add(name, station);
-        if (node.GetValue("role") == "tx") {
-          tx_.Add(station);
-        } else if (node.GetValue("role") == "rx") {
-          rx_.Add(station);
-        } else {
-          tx_.Add(station);
-          rx_.Add(station);
-        }
+        stations_.Add(name, null);
       }
-      connections_ = null;
+      connection_graph_ = null;
     }
-    public void AddCustomers(IEnumerable<string> names) {
+
+    RACommNetHome MakeStation(string name) {
+      var node = GetStationDefinition(name);
+      var body = GetConfiguredBody(node);
+      var station =
+        new UnityEngine.GameObject(body.name).AddComponent<RACommNetHome>();
+      var station_node = new ConfigNode();
+      foreach (string key in new[] { "objectName", "lat", "lon", "alt" }) {
+        station_node.AddValue(key, node.GetValue(key));
+      }
+      station_node.AddValue("isKSC", false);
+      station_node.AddValue("isHome", false);
+      station_node.AddValue("icon", "RealAntennas/radio-antenna");
+      foreach (var antenna in node.GetNodes("Antenna")) {
+        station_node.AddNode(antenna);
+      }
+      station.Configure(station_node, body);
+
+      if (node.GetValue("role") == "tx") {
+        tx_.Add(station);
+      } else if (node.GetValue("role") == "rx") {
+        rx_.Add(station);
+      } else {
+        tx_.Add(station);
+        rx_.Add(station);
+      }
+      return station;
+    }
+
+      public void AddCustomers(IEnumerable<string> names) {
       foreach (var name in names) {
         if (customers_.ContainsKey(name)) {
           Log($"Customer {name} already present");
@@ -131,23 +152,23 @@ namespace skopos {
         Log($"Adding customer {name}");
         customers_.Add(name, new Customer(GetCustomerDefinition(name), this));
       }
-      connections_ = null;
+      connection_graph_ = null;
     }
-    public void AddConnectionMonitors(IEnumerable<string> names) {
+    public void AddConnections(IEnumerable<string> names) {
       foreach (var name in names) {
-        if (connection_monitors_.ContainsKey(name)) {
+        if (connections_.ContainsKey(name)) {
           Log($"Connection {name} already present");
           continue;
         }
         Log($"Adding connection {name}");
-        connection_monitors_.Add(name, new ConnectionMonitor(GetConnectionMonitorDefinition(name)));
+        connections_.Add(name, new Connection(GetConnectionDefinition(name)));
       }
-      connections_ = null;
+      connection_graph_ = null;
     }
 
     public void RemoveStations(IEnumerable<string> names) { }
     public void RemoveCustomers(IEnumerable<string> names) { }
-    public void RemoveConnectionMonitors(IEnumerable<string> names) { }
+    public void RemoveConnections(IEnumerable<string> names) { }
 
     public void AddNominalLocation(Vessel v) {
       // TODO(egg): maybe this could be body-dependent.
@@ -175,13 +196,27 @@ namespace skopos {
     }
 
     public void Refresh() {
-      if (connections_ == null) {
-        RebuildConnections();
+      if (connection_graph_ == null) {
+        RebuildGraph();
       }
-      if (stations_.Values.Any(station => station.Comm == null)) {
+      bool all_stations_good = true;
+      var station_names = stations_.Keys.ToArray();
+      foreach (var name in station_names) {
+        if (stations_[name] == null) {
+          Log($"Making station {name}");
+          stations_[name] = MakeStation(name);
+        } else if (stations_[name].Comm == null) {
+          Log($"null Comm for {name}");
+        }
+      }
+      if (!all_stations_good) {
         return;
       }
-      foreach (var station in stations_.Values) {
+      foreach (var pair in stations_) {
+        var station = pair.Value;
+        if (station.Comm.RAAntennaList.Count == 0) {
+          Log($"No antenna for {pair.Key}");
+        }
         station.Comm.RAAntennaList[0].Target = null;
       }
       CreateGroundSegmentNodesIfNeeded();
@@ -261,7 +296,7 @@ namespace skopos {
       for (int tx = 0; tx < all_ground_.Length; ++tx) {
         for (int rx = 0; rx < all_ground_.Length; ++rx) {
           if (rx == tx || !tx_.Contains(all_ground_[tx]) || !rx_.Contains(all_ground_[rx])) {
-            connections_[tx, rx].AddMeasurement(double.NaN, double.NaN);
+            connection_graph_[tx, rx].AddMeasurement(double.NaN, double.NaN);
             continue;
           }
           var path = new CommNet.CommPath();
@@ -281,14 +316,14 @@ namespace skopos {
           if (path.IsEmpty()) {
             rate = 0;
           }
-          connections_[tx, rx].AddMeasurement(rate: rate, latency: length / 299792458);
+          connection_graph_[tx, rx].AddMeasurement(rate: rate, latency: length / 299792458);
           min_rate_ = Math.Min(min_rate_, rate);
         }
       }
     }
 
-    public ConnectionMonitor Monitor(string name) {
-      return connection_monitors_[name];
+    public Connection Monitor(string name) {
+      return connections_[name];
     }
 
     private class Customer {
@@ -393,8 +428,8 @@ namespace skopos {
       private Network network_;
     }
 
-    public class ConnectionMonitor {
-      public ConnectionMonitor(ConfigNode node) {
+    public class Connection {
+      public Connection(ConfigNode node) {
         tx_name = node.GetValue("tx");
         rx_name = node.GetValue("rx");
         latency_threshold = double.Parse(node.GetValue("latency"));
@@ -419,7 +454,7 @@ namespace skopos {
       private double total_measurement_time_;
     }
 
-    public class Connection {
+    public class Edge {
       public void AddMeasurement(double latency, double rate) {
         if (last_measurement_time_ != null) {
           double Δt = Planetarium.GetUniversalTime() - last_measurement_time_.Value;
@@ -433,7 +468,7 @@ namespace skopos {
       }
       public double current_latency { get; private set; }
       public double current_rate { get; private set; }
-      public List<ConnectionMonitor> monitors_ = new List<ConnectionMonitor>();
+      public List<Connection> monitors_ = new List<Connection>();
       private double? last_measurement_time_;
     }
 
@@ -443,8 +478,8 @@ namespace skopos {
         new SortedDictionary<string, Customer>();
     private readonly SortedDictionary<string, RACommNetHome> stations_ =
         new SortedDictionary<string, RACommNetHome>();
-    private readonly SortedDictionary<string, ConnectionMonitor> connection_monitors_ =
-        new SortedDictionary<string, ConnectionMonitor>();
+    private readonly SortedDictionary<string, Connection> connections_ =
+        new SortedDictionary<string, Connection>();
     private List<SiteNode> ground_segment_nodes_;
     public readonly HashSet<RACommNetHome> tx_ = new HashSet<RACommNetHome>();
     public readonly HashSet<RACommNetHome> rx_ = new HashSet<RACommNetHome>();
@@ -454,7 +489,7 @@ namespace skopos {
     private readonly Random random_ = new Random();
     public readonly List<CommNet.CommLink> active_links_ = new List<CommNet.CommLink>();
     public RACommNetHome[] all_ground_ = { };
-    public Connection[,] connections_ = { };
+    public Edge[,] connection_graph_ = { };
     public string[] names_ = { };
     public double min_rate_;
     public bool freeze_customers_;

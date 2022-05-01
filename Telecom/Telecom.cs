@@ -20,10 +20,12 @@ namespace skopos {
 
     public override void OnLoad(ConfigNode node) {
       base.OnLoad(node);
+      network = new Network(node.GetNode("network"));
     }
 
     public override void OnSave(ConfigNode node) {
       base.OnSave(node);
+      network.Serialize(node.AddNode("network"));
     }
 
     private void OnGUI() {
@@ -32,10 +34,7 @@ namespace skopos {
     }
 
     private void FixedUpdate() {
-      if (network == null) {
-        network = new Network(GameDatabase.Instance.GetConfigs("skopos_telecom")[0].config);
-      }
-      network.Refresh();
+      network?.Refresh();
     }
 
     private void DrawWindow(int id) {
@@ -78,8 +77,8 @@ namespace skopos {
               if (!network.rx_.Contains(network.all_ground_[rx])) {
                 continue;
               }
-              double rate = network.connections_[tx, rx].current_rate;
-              double latency = network.connections_[tx, rx].current_latency;
+              double rate = network.connection_graph_[tx, rx].current_rate;
+              double latency = network.connection_graph_[tx, rx].current_latency;
               UnityEngine.GUILayout.Label(
                 double.IsNaN(latency) || double.IsNaN(latency)
                   ? "—"
