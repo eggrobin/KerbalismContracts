@@ -54,6 +54,8 @@ namespace skopos {
     private List<string> customers_;
     private List<string> connections_;
 
+    public GroundSegmentMutation() {}
+
     public GroundSegmentMutation(Operation operation,
                                  List<string> stations,
                                  List<string> customers,
@@ -65,6 +67,26 @@ namespace skopos {
       stations_ = stations;
       customers_ = customers;
       connections_ = connections;
+    }
+
+    protected override void OnLoad(ConfigNode node) {
+      Enum.TryParse(node.GetValue("operation"), out operation_);
+      stations_ = node.GetValuesList("station");
+      customers_ = node.GetValuesList("customer");
+      connections_ = node.GetValuesList("connection");
+    }
+
+    protected override void OnSave(ConfigNode node) {
+      node.AddValue("operation", operation_);
+      foreach (var station in stations_) {
+        node.AddValue("station", station);
+      }
+      foreach (var customer in customers_) {
+        node.AddValue("customer", customer);
+      }
+      foreach (var connection in connections_) {
+        node.AddValue("connection", connection);
+      }
     }
 
     protected override void TriggerAction() {
