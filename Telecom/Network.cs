@@ -128,6 +128,8 @@ namespace skopos {
       station_node.AddValue("isHome", false);
       station_node.AddValue("icon", "RealAntennas/radio-antenna");
       foreach (var antenna in node.GetNodes("Antenna")) {
+        Log($"antenna for {name}: {antenna}");
+        Log($"Ground TL is {RACommNetScenario.GroundStationTechLevel}");
         station_node.AddNode(antenna);
       }
       station.Configure(station_node, body);
@@ -208,6 +210,7 @@ namespace skopos {
         } else if (stations_[name].Comm == null) {
           Log($"null Comm for {name}");
         }
+        all_stations_good &= stations_[name].Comm != null;
       }
       if (!all_stations_good) {
         return;
@@ -219,7 +222,7 @@ namespace skopos {
         }
         station.Comm.RAAntennaList[0].Target = null;
       }
-      CreateGroundSegmentNodesIfNeeded();
+      //CreateGroundSegmentNodesIfNeeded();
       foreach (var customer in customers_.Values) {
         customer.Cycle();
       }
