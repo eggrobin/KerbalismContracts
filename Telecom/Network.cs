@@ -201,16 +201,26 @@ namespace skopos {
       if (connection_graph_ == null) {
         RebuildGraph();
       }
-      bool all_stations_good = true;
+      bool all_stations_good = true;;
       var station_names = stations_.Keys.ToArray();
       foreach (var name in station_names) {
         if (stations_[name] == null) {
           Log($"Making station {name}");
           stations_[name] = MakeStation(name);
-        } else if (stations_[name].Comm == null) {
-          Log($"null Comm for {name}");
         }
-        all_stations_good &= stations_[name].Comm != null;
+        if (stations_[name].Comm == null) {
+          Log($"null Comm for {name}");
+          all_stations_good = false;
+        }
+        string node_name = stations_[name].nodeName;
+        if (!RACommNetScenario.GroundStations.ContainsKey(node_name)) {
+          Log($"{name} not in GroundStations at {node_name}");
+          RACommNetScenario.GroundStations.Add(node_name, stations_[name]);
+        } else if (RACommNetScenario.GroundStations[node_name] != stations_[name]) {
+          Log($"{name} is not GroundStations[{node_name}]");
+          UnityEngine.Object.DestroyImmediate(RACommNetScenario.GroundStations[node_name]);
+          RACommNetScenario.GroundStations[node_name] = stations_[name];
+        }
       }
       if (!all_stations_good) {
         return;
@@ -219,6 +229,7 @@ namespace skopos {
         var station = pair.Value;
         if (station.Comm.RAAntennaList.Count == 0) {
           Log($"No antenna for {pair.Key}");
+          Log($"Ground TL is {RACommNetScenario.GroundStationTechLevel}");
         }
         station.Comm.RAAntennaList[0].Target = null;
       }
@@ -473,6 +484,14 @@ namespace skopos {
       public double current_rate { get; private set; }
       public List<Connection> monitors_ = new List<Connection>();
       private double? last_measurement_time_;
+    }
+
+    public Connection GetConnection(string name) {
+      return connections_[name];
+    }
+
+    public RACommNetHome GetStation(string name) {
+      return stations_[name];
     }
 
     public int customer_pool_size { get; set; }

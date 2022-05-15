@@ -5,6 +5,7 @@ using System.Text;
 using System.Threading.Tasks;
 using ContractConfigurator;
 using Contracts;
+using RealAntennas;
 
 namespace skopos {
   public class ConnectionAvailabilityFactory : ParameterFactory {
@@ -47,6 +48,34 @@ namespace skopos {
     protected override void OnSave(ConfigNode node) {
       node.AddValue("connection", connection_);
       node.AddValue("availability", availability_);
+    }
+
+    protected override string GetMessageComplete() {
+      return "meow complete";
+    }
+
+    protected override string GetMessageIncomplete() {
+      return "meow incomplete";
+    }
+
+    protected override string GetMessageFailed() {
+      return "meow failed";
+    }
+
+    protected override string GetNotes() {
+      var connection = Telecom.Instance.network.GetConnection(connection_);
+      string data_rate = RATools.PrettyPrintDataRate(connection.rate_threshold);
+      double latency = connection.latency_threshold;
+      string pretty_latency = latency >= 1 ? $"{latency} s" : $"{latency * 1000} ms";
+      return $"At least {data_rate}, with a latency of at most {pretty_latency}";
+    }
+
+    protected override string GetTitle() {
+      var connection = Telecom.Instance.network.GetConnection(connection_);
+      var tx = Telecom.Instance.network.GetStation(connection.tx_name);
+      var rx = Telecom.Instance.network.GetStation(connection.rx_name);
+      return $"{tx.displaynodeName} to {rx.displaynodeName}:\n" +
+             $"{connection.availability:P0} availability (target: {availability_:P0})";
     }
 
     private string connection_;
