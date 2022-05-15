@@ -197,6 +197,16 @@ namespace skopos {
       must_retarget_customers_ = true;
     }
 
+    private void OnUpdateGroundStationVisible(
+        KSP.UI.Screens.Mapview.MapNode mapNode,
+        KSP.UI.Screens.Mapview.MapNode.IconData iconData) {}
+
+    private void OnUpdateOffNetworkStationVisible(
+        KSP.UI.Screens.Mapview.MapNode mapNode,
+        KSP.UI.Screens.Mapview.MapNode.IconData iconData) {
+      iconData.visible &= !hide_off_network;
+    }
+
     public void Refresh() {
       if (connection_graph_ == null) {
         RebuildGraph();
@@ -220,6 +230,19 @@ namespace skopos {
           Log($"{name} is not GroundStations[{node_name}]");
           UnityEngine.Object.DestroyImmediate(RACommNetScenario.GroundStations[node_name]);
           RACommNetScenario.GroundStations[node_name] = stations_[name];
+        }
+      }
+      var ui = RACommNetUI.Instance as RACommNetUI;
+      if (!ground_stations_have_visibility_callback_ &&
+          ui?.groundStationSiteNodes.Count > 0) {
+        foreach (var site in ui.groundStationSiteNodes) {
+          var station_comm = ((GroundStationSiteNode)site.siteObject).node;
+          bool on_network = stations_.Values.Any(station => station.Comm == station_comm);
+          if (on_network) {
+            site.wayPoint.node.OnUpdateVisible += OnUpdateGroundStationVisible;
+          } else {
+            site.wayPoint.node.OnUpdateVisible += OnUpdateOffNetworkStationVisible;
+          }
         }
       }
       if (!all_stations_good) {
@@ -495,7 +518,9 @@ namespace skopos {
     }
 
     public int customer_pool_size { get; set; }
+    public bool hide_off_network { get; set; }
 
+    private bool ground_stations_have_visibility_callback_ = false;
     private readonly SortedDictionary<string, Customer> customers_ =
         new SortedDictionary<string, Customer>();
     private readonly SortedDictionary<string, RACommNetHome> stations_ =

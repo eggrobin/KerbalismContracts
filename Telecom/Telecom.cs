@@ -118,9 +118,10 @@ namespace skopos {
               return;
             }
           }
-          show_network_ = UnityEngine.GUILayout.Toggle(show_network_, "Show network");
-          show_active_links_ = UnityEngine.GUILayout.Toggle(show_active_links_, "Active links only");
         }
+        show_network_ = UnityEngine.GUILayout.Toggle(show_network_, "Show network");
+        show_active_links_ = UnityEngine.GUILayout.Toggle(show_active_links_, "Active links only");
+        network.hide_off_network = show_network_;
       }
       UnityEngine.GUI.DragWindow();
     }
