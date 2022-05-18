@@ -11,7 +11,7 @@ using RealAntennas.Targeting;
 namespace skopos {
   [KSPScenario(
     ScenarioCreationOptions.AddToAllGames,
-    new[] { GameScenes.SPACECENTER, GameScenes.TRACKSTATION, GameScenes.FLIGHT })]
+    new[] { GameScenes.SPACECENTER, GameScenes.TRACKSTATION, GameScenes.FLIGHT, GameScenes.EDITOR })]
   public sealed class Telecom : ScenarioModule {
 
     public Telecom() {
