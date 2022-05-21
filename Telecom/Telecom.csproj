@@ -40,6 +40,9 @@
     <Reference Include="RealAntennas">
       <HintPath>..\..\KSP_win64 1.12.2\GameData\RealAntennas\RealAntennas.dll</HintPath>
     </Reference>
+    <Reference Include="RP0KCT">
+      <HintPath>..\..\Kerbal Space Program\KSP_win64 RO 1.12.3\GameData\RP-0\Plugins\RP0KCT.dll</HintPath>
+    </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
     <Reference Include="System.Xml.Linq" />

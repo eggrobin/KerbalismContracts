@@ -27,8 +27,31 @@ namespace skopos {
 
     private void FixedUpdate() {
       DateTime now = rss_epoch.AddSeconds(Planetarium.GetUniversalTime());
+      bool facilities_maxed = true;
+      foreach (var upgradeable in ScenarioUpgradeableFacilities.protoUpgradeables.Values) {
+        foreach (var facility in upgradeable.facilityRefs) {
+          if (!facility.id.Contains("LaunchPad") &&
+              facility.FacilityLevel != facility.MaxLevel) {
+            facilities_maxed = false;
+          }
+        }
+      }
+      if (!facilities_maxed) {
+        ScenarioUpgradeableFacilities.Instance.CheatFacilities();
+      }
+      foreach (KerbalConstructionTime.KSCItem ksc
+               in KerbalConstructionTime.KCTGameStates.KSCs) {
+        ksc.VABUpgrades[0] = 1729;
+        ksc.SPHUpgrades[0] = 1729;
+        ksc.RDUpgrades[0] = 1729;
+        ksc.RDUpgrades[1] = 1729;
+        if (ksc.LaunchPads[0].level != 6) {
+          ksc.LaunchPads[0] = new KerbalConstructionTime.KCT_LaunchPad("pad", 6);
+        }
+      }
       if (now.Year > current_year) {
         current_year = now.Year;
+
         UnityEngine.Debug.Log($"UNLOCKING TECHS UP TO {current_year}");
         foreach (var year_techs in techs_by_year) {
           int year = year_techs.Key;
