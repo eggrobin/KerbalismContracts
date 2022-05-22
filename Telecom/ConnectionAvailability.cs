@@ -23,9 +23,14 @@ namespace skopos {
   }
 
   public class ConnectionAvailability : ContractParameter {
-    public ConnectionAvailability() {}
+    private string last_title_;
+    private TitleTracker title_tracker_;
+    public ConnectionAvailability() {
+      title_tracker_ = new TitleTracker(this);
+    }
 
     public ConnectionAvailability(string connection, double availability) {
+      title_tracker_ = new TitleTracker(this);
       connection_ = connection;
       availability_ = availability;
       disableOnStateChange = false;
@@ -33,11 +38,14 @@ namespace skopos {
 
     protected override void OnUpdate() {
       base.OnUpdate();
-      if (Telecom.Instance.network.Monitor(connection_).availability >= availability_) {
+      var connection = Telecom.Instance.network.Monitor(connection_);
+      if (connection.evaluated >= connection.window &&
+          connection.availability >= availability_) {
         SetComplete();
       } else {
         SetIncomplete();
       }
+      GetTitle();
     }
 
     protected override void OnLoad(ConfigNode node) {
@@ -67,15 +75,22 @@ namespace skopos {
       string data_rate = RATools.PrettyPrintDataRate(connection.rate_threshold);
       double latency = connection.latency_threshold;
       string pretty_latency = latency >= 1 ? $"{latency} s" : $"{latency * 1000} ms";
-      return $"At least {data_rate}, with a latency of at most {pretty_latency}";
+      return $"At least {data_rate}, with a latency of at most {pretty_latency}.";
     }
 
     protected override string GetTitle() {
       var connection = Telecom.Instance.network.GetConnection(connection_);
       var tx = Telecom.Instance.network.GetStation(connection.tx_name);
       var rx = Telecom.Instance.network.GetStation(connection.rx_name);
-      return $"{tx.displaynodeName} to {rx.displaynodeName}:\n" +
-             $"{connection.availability:P0} availability (target: {availability_:P0})";
+      string title = $"{tx.displaynodeName} to {rx.displaynodeName}:\n" +
+             $"{connection.availability:P1} availability (target: {availability_:P1}) over {connection.evaluated}/{connection.window} days.\n" +
+             $"Availability yesterday: {connection.availability_yesterday:P1}.";
+      title_tracker_.Add(title);
+      if (last_title_ != title) {
+        title_tracker_.UpdateContractWindow(title);
+      }
+      last_title_ = title;
+      return title;
     }
 
     private string connection_;

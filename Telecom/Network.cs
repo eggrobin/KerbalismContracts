@@ -98,7 +98,7 @@ namespace skopos {
       }
       foreach (var connection in connections_.Values) {
         int tx = names_.IndexOf(connection.tx_name);
-        int rx = names_.IndexOf(connection.tx_name);
+        int rx = names_.IndexOf(connection.rx_name);
         connection_graph_[tx, rx].monitors_.Add(connection);
       }
     }
@@ -471,42 +471,76 @@ namespace skopos {
         rx_name = node.GetValue("rx");
         latency_threshold = double.Parse(node.GetValue("latency"));
         rate_threshold = double.Parse(node.GetValue("rate"));
+        window = int.Parse(node.GetValue("window"));
+        daily_availability_ = new LinkedList<double>();
       }
 
-        public void AddMeasurement(double latency, double rate, double Δt) {
-        if (latency <= latency_threshold || rate >= rate_threshold) {
-          time_within_sla_ += Δt;
+      public void AddMeasurement(double latency, double rate, double t) {
+        double day = KSPUtil.dateTimeFormatter.Day;
+        double t_in_days = t / day;
+        double new_day = Math.Floor(t_in_days);
+        if (current_day_ == null) {
+          current_day_ = new_day;
+          return;
         }
-        total_measurement_time_ += Δt;
+        bool within_sla = latency <= latency_threshold && rate >= rate_threshold;
+        Log($"Measurement {(within_sla ? "within":"out of")} sla ({latency} <= {latency_threshold} && {rate} >= {rate_threshold}");
+
+        if (new_day > current_day_) {
+          Log($"New day");
+          if (within_sla) {
+            daily_availability_.AddLast(day_fraction_within_sla_ + (1 - day_fraction_));
+          } else {
+            daily_availability_.AddLast(day_fraction_within_sla_);
+          }
+          Log($"Availability: {daily_availability_.Last.Value}");
+          for (int i = 0; i < new_day - current_day_ - 1; ++i) {
+            daily_availability_.AddLast(within_sla ? 1 : 0);
+            Log($"Availability: {daily_availability_.Last.Value}");
+          }
+          availability = daily_availability_.Sum() / daily_availability_.Count;
+          day_fraction_ = t_in_days - new_day;
+          day_fraction_within_sla_ = within_sla ? day_fraction_ : 0;
+        } else {
+          day_fraction_within_sla_ += within_sla ? (t_in_days - new_day) - day_fraction_ : 0;
+          day_fraction_ = t_in_days - new_day;
+        }
+        while (daily_availability_.Count > window) {
+          Log($"Removing from {daily_availability_.Count}");
+          daily_availability_.RemoveFirst();
+        }
+        Log($"{day_fraction_within_sla_}/{day_fraction_}");
+        current_day_ = new_day;
       }
       public double latency_threshold { get; }
       public double rate_threshold { get; }
-      public double availability => time_within_sla_ / total_measurement_time_;
+      public double availability { get; private set; }
+      public double availability_yesterday => daily_availability_.Count == 0 ? 0 : daily_availability_.Last();
 
       public string tx_name { get; }
       public string rx_name { get; }
 
+      public int window { get; private set; }
+      public int evaluated => daily_availability_.Count;
+
       // TODO(egg): Save these.
-      private double time_within_sla_;
-      private double total_measurement_time_;
+      private LinkedList<double> daily_availability_;
+      private double? current_day_;
+      private double day_fraction_within_sla_;
+      private double day_fraction_;
     }
 
     public class Edge {
       public void AddMeasurement(double latency, double rate) {
-        if (last_measurement_time_ != null) {
-          double Δt = Planetarium.GetUniversalTime() - last_measurement_time_.Value;
-          current_latency = latency;
-          current_rate = rate;
-          foreach (var monitor in monitors_) {
-            monitor.AddMeasurement(latency, rate, Δt);
-          }
+        current_latency = latency;
+        current_rate = rate;
+        foreach (var monitor in monitors_) {
+          monitor.AddMeasurement(latency, rate, Planetarium.GetUniversalTime());
         }
-        last_measurement_time_ = Planetarium.GetUniversalTime();
       }
       public double current_latency { get; private set; }
       public double current_rate { get; private set; }
       public List<Connection> monitors_ = new List<Connection>();
-      private double? last_measurement_time_;
     }
 
     public Connection GetConnection(string name) {
