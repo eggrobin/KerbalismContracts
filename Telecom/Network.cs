@@ -511,7 +511,7 @@ namespace skopos {
         while (daily_availability_.Count > window) {
           daily_availability_.RemoveFirst();
         }
-        if (current_day_ > new_day) {
+        if (new_day > current_day_) {
           UpdateAvailability();
         }
         current_day_ = new_day;
