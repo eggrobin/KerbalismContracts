@@ -39,7 +39,7 @@ namespace skopos {
     protected override void OnUpdate() {
       base.OnUpdate();
       var connection = Telecom.Instance.network.Monitor(connection_);
-      if (connection.evaluated >= connection.window &&
+      if (connection.days >= connection.window &&
           connection.availability >= availability_) {
         SetComplete();
       } else {
@@ -83,7 +83,7 @@ namespace skopos {
       var tx = Telecom.Instance.network.GetStation(connection.tx_name);
       var rx = Telecom.Instance.network.GetStation(connection.rx_name);
       string title = $"{tx.displaynodeName} to {rx.displaynodeName}:\n" +
-             $"{connection.availability:P1} availability (target: {availability_:P1}) over {connection.evaluated}/{connection.window} days.\n" +
+             $"{connection.availability:P1} availability (target: {availability_:P1}) over {connection.days}/{connection.window} days.\n" +
              $"Availability yesterday: {connection.availability_yesterday:P1}.";
       title_tracker_.Add(title);
       if (last_title_ != title) {

@@ -15,12 +15,11 @@ namespace skopos {
       ok &= ConfigNodeUtil.ParseValue(node, "customer", x => customers_ = x, this, empty_);
       ok &= ConfigNodeUtil.ParseValue(node, "connection", x => connections_ = x, this, empty_);
       var condition = ConfigNodeUtil.GetChildNode(node, "condition");
-      ok &= ConfigNodeUtil.ParseValue<TriggeredBehaviour.State>(condition, "state", x => state_ = x, this);
-      ok &= ConfigNodeUtil.ParseValue(condition, "parameter", x => parameters_ = x, this, empty_);
+      ok &= ConfigNodeUtil.ParseValue<GroundSegmentMutation.State>(condition, "state", x => state_ = x, this);
       return ok;
     }
     public override ContractBehaviour Generate(ConfiguredContract contract) {
-      return new GroundSegmentMutation(Operation(), stations_, customers_, connections_, state_, parameters_);
+      return new GroundSegmentMutation(Operation(), stations_, customers_, connections_, state_);
     }
 
     protected abstract GroundSegmentMutation.Operation Operation();
@@ -29,7 +28,7 @@ namespace skopos {
     private List<string> customers_;
     private List<string> connections_;
     private List<string> parameters_;
-    private TriggeredBehaviour.State state_;
+    private GroundSegmentMutation.State state_;
   }
 
   public class AddToGroundSegmentFactory : GroundSegmentMutationFactory {
@@ -43,7 +42,12 @@ namespace skopos {
     }
   }
 
-  public class GroundSegmentMutation : TriggeredBehaviour {
+  public class GroundSegmentMutation : ContractBehaviour {
+    public enum State {
+      OFFERED,
+      DECLINED,
+    }
+
     public enum Operation {
       ADD,
       REMOVE,
@@ -53,6 +57,7 @@ namespace skopos {
     private List<string> stations_;
     private List<string> customers_;
     private List<string> connections_;
+    private State state_;
 
     public GroundSegmentMutation() {}
 
@@ -60,13 +65,12 @@ namespace skopos {
                                  List<string> stations,
                                  List<string> customers,
                                  List<string> connections,
-                                 State state,
-                                 List<string> parameters) 
-      : base(state, parameters.ToList()) {
+                                 State state) {
       operation_ = operation;
       stations_ = stations;
       customers_ = customers;
       connections_ = connections;
+      state_ = state;
     }
 
     protected override void OnLoad(ConfigNode node) {
@@ -89,7 +93,20 @@ namespace skopos {
       }
     }
 
-    protected override void TriggerAction() {
+    protected override void OnOffered() {
+      base.OnOffered();
+      if (state_ == State.OFFERED) {
+        Behave();
+      }
+    }
+
+    protected override void OnDeclined() {
+      if (state_ == State.DECLINED) {
+        Behave();
+      }
+    }
+
+    protected void Behave() {
       if (operation_ == Operation.ADD) {
         Telecom.Instance.network.AddStations(stations_);
         Telecom.Instance.network.AddCustomers(customers_);

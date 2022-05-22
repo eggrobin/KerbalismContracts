@@ -65,7 +65,11 @@ namespace skopos {
       }
       AddStations(network_specification.GetValues("station"));
       AddCustomers(network_specification.GetValues("customer"));
-      AddConnections(network_specification.GetValues("connection"));
+      ConfigNode[] connection_nodes = network_specification.GetNodes("connection");
+      AddConnections(connection_nodes.Select(n => n.GetValue("name")));
+      foreach (ConfigNode node in connection_nodes) {
+        connections_[node.GetValue("name")].Load(node);
+      }
     }
 
     public void Serialize(ConfigNode node) {
@@ -75,8 +79,12 @@ namespace skopos {
       foreach (string customer in customers_.Keys) {
         node.AddValue("customer", customer);
       }
-      foreach (string connection in connections_.Keys) {
-        node.AddValue("connection", connection);
+      foreach (var name_connection in connections_) {
+        string name = name_connection.Key;
+        Connection connection = name_connection.Value;
+        ConfigNode connection_node = node.AddNode("connection");
+        connection_node.AddValue("name", name);
+        connection.Serialize(connection_node);
       }
     }
 
@@ -466,12 +474,12 @@ namespace skopos {
     }
 
     public class Connection {
-      public Connection(ConfigNode node) {
-        tx_name = node.GetValue("tx");
-        rx_name = node.GetValue("rx");
-        latency_threshold = double.Parse(node.GetValue("latency"));
-        rate_threshold = double.Parse(node.GetValue("rate"));
-        window = int.Parse(node.GetValue("window"));
+      public Connection(ConfigNode definition) {
+        tx_name = definition.GetValue("tx");
+        rx_name = definition.GetValue("rx");
+        latency_threshold = double.Parse(definition.GetValue("latency"));
+        rate_threshold = double.Parse(definition.GetValue("rate"));
+        window = int.Parse(definition.GetValue("window"));
         daily_availability_ = new LinkedList<double>();
       }
 
@@ -484,21 +492,16 @@ namespace skopos {
           return;
         }
         bool within_sla = latency <= latency_threshold && rate >= rate_threshold;
-        Log($"Measurement {(within_sla ? "within":"out of")} sla ({latency} <= {latency_threshold} && {rate} >= {rate_threshold}");
 
         if (new_day > current_day_) {
-          Log($"New day");
           if (within_sla) {
             daily_availability_.AddLast(day_fraction_within_sla_ + (1 - day_fraction_));
           } else {
             daily_availability_.AddLast(day_fraction_within_sla_);
           }
-          Log($"Availability: {daily_availability_.Last.Value}");
           for (int i = 0; i < new_day - current_day_ - 1; ++i) {
             daily_availability_.AddLast(within_sla ? 1 : 0);
-            Log($"Availability: {daily_availability_.Last.Value}");
           }
-          availability = daily_availability_.Sum() / daily_availability_.Count;
           day_fraction_ = t_in_days - new_day;
           day_fraction_within_sla_ = within_sla ? day_fraction_ : 0;
         } else {
@@ -506,12 +509,36 @@ namespace skopos {
           day_fraction_ = t_in_days - new_day;
         }
         while (daily_availability_.Count > window) {
-          Log($"Removing from {daily_availability_.Count}");
           daily_availability_.RemoveFirst();
         }
-        Log($"{day_fraction_within_sla_}/{day_fraction_}");
+        if (current_day_ > new_day) {
+          UpdateAvailability();
+        }
         current_day_ = new_day;
       }
+
+      public void Serialize(ConfigNode node) {
+        foreach(var availability in daily_availability_) {
+          node.AddValue("daily_availability", availability);
+        }
+        node.AddValue("current_day", current_day_);
+        node.AddValue("day_fraction_within_sla", day_fraction_within_sla_);
+        node.AddValue("day_fraction", day_fraction_);
+      }
+
+      public void Load(ConfigNode node) {
+        daily_availability_ =
+          new LinkedList<double>(node.GetValues("daily_availability").Select(double.Parse));
+        current_day_ = double.Parse(node.GetValue("current_day"));
+        day_fraction_within_sla_ = double.Parse(node.GetValue("day_fraction_within_sla"));
+        day_fraction_ = double.Parse(node.GetValue("day_fraction"));
+        UpdateAvailability();
+      }
+
+      private void UpdateAvailability() {
+        availability = daily_availability_.Sum() / daily_availability_.Count;
+      }
+
       public double latency_threshold { get; }
       public double rate_threshold { get; }
       public double availability { get; private set; }
@@ -521,9 +548,8 @@ namespace skopos {
       public string rx_name { get; }
 
       public int window { get; private set; }
-      public int evaluated => daily_availability_.Count;
+      public int days => daily_availability_.Count;
 
-      // TODO(egg): Save these.
       private LinkedList<double> daily_availability_;
       private double? current_day_;
       private double day_fraction_within_sla_;
